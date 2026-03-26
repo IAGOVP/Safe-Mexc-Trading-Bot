@@ -2,6 +2,13 @@ import { Request, Response } from "express";
 import { Account } from "../models/Account.model";
 import { mexcPrivateGet, mexcPrivatePost, mexcPublicGet } from "../services/mexc.service";
 
+interface MexcEnvelope<T = unknown> {
+  success?: boolean;
+  code?: number;
+  message?: string;
+  data?: T;
+}
+
 const requireAccountKeys = async (email: string): Promise<{ accessKey: string; secretKey: string }> => {
   const account = await Account.findOne({ email: email.toLowerCase() });
   if (!account) {
@@ -12,7 +19,13 @@ const requireAccountKeys = async (email: string): Promise<{ accessKey: string; s
     throw new Error("MEXC API keys are not set in your account settings.");
   }
 
-  return { accessKey: account.mexcAPIKey, secretKey: account.mexcSecretKey };
+  return { accessKey: account.mexcAPIKey.trim(), secretKey: account.mexcSecretKey.trim() };
+};
+
+const assertMexcSuccess = (response: MexcEnvelope, fallbackMessage: string): void => {
+  if (response.success === false) {
+    throw new Error(response.message ?? fallbackMessage);
+  }
 };
 
 export const getIndexPriceCandles = async (req: Request, res: Response): Promise<void> => {
@@ -46,7 +59,8 @@ export const getAccountAssets = async (req: Request, res: Response): Promise<voi
 
   try {
     const { accessKey, secretKey } = await requireAccountKeys(email);
-    const response = await mexcPrivateGet<unknown>(accessKey, secretKey, "/api/v1/private/account/assets", {});
+    const response = await mexcPrivateGet<MexcEnvelope>(accessKey, secretKey, "/api/v1/private/account/assets", {});
+    assertMexcSuccess(response, "MEXC rejected account assets request.");
     res.status(200).json({ data: response });
   } catch (err) {
     res.status(400).json({ message: err instanceof Error ? err.message : "Failed to load account assets." });
@@ -67,7 +81,7 @@ export const getOpenPositions = async (req: Request, res: Response): Promise<voi
 
   try {
     const { accessKey, secretKey } = await requireAccountKeys(email);
-    const response = await mexcPrivateGet<unknown>(
+    const response = await mexcPrivateGet<MexcEnvelope>(
       accessKey,
       secretKey,
       "/api/v1/private/position/open_positions",
@@ -76,6 +90,7 @@ export const getOpenPositions = async (req: Request, res: Response): Promise<voi
         positionId
       }
     );
+    assertMexcSuccess(response, "MEXC rejected open positions request.");
     res.status(200).json({ data: response });
   } catch (err) {
     res.status(400).json({ message: err instanceof Error ? err.message : "Failed to load open positions." });
@@ -109,7 +124,7 @@ export const submitOrder = async (req: Request, res: Response): Promise<void> =>
 
   try {
     const { accessKey, secretKey } = await requireAccountKeys(email);
-    const response = await mexcPrivatePost<unknown>(
+    const response = await mexcPrivatePost<MexcEnvelope>(
       accessKey,
       secretKey,
       "/api/v1/private/order/submit",
@@ -126,6 +141,7 @@ export const submitOrder = async (req: Request, res: Response): Promise<void> =>
         positionId: positionId ?? undefined
       }
     );
+    assertMexcSuccess(response, "MEXC rejected order submit request.");
     res.status(200).json({ data: response });
   } catch (err) {
     res.status(400).json({ message: err instanceof Error ? err.message : "Failed to submit order." });
@@ -144,7 +160,8 @@ export const cancelOrders = async (req: Request, res: Response): Promise<void> =
   try {
     const { accessKey, secretKey } = await requireAccountKeys(email);
     // MEXC docs: cancel expects an order id list.
-    const response = await mexcPrivatePost<unknown>(accessKey, secretKey, "/api/v1/private/order/cancel", {}, normalized);
+    const response = await mexcPrivatePost<MexcEnvelope>(accessKey, secretKey, "/api/v1/private/order/cancel", {}, normalized);
+    assertMexcSuccess(response, "MEXC rejected cancel request.");
     res.status(200).json({ data: response });
   } catch (err) {
     res.status(400).json({ message: err instanceof Error ? err.message : "Failed to cancel orders." });

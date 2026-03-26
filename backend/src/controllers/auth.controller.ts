@@ -86,8 +86,8 @@ export const updateKeys = async (req: Request, res: Response): Promise<void> => 
   const account = await Account.findOneAndUpdate(
     { email: email.toLowerCase() },
     {
-      mexcAPIKey: mexcAPIKey ?? "",
-      mexcSecretKey: mexcSecretKey ?? ""
+      mexcAPIKey: (mexcAPIKey ?? "").trim(),
+      mexcSecretKey: (mexcSecretKey ?? "").trim()
     },
     { new: true }
   );

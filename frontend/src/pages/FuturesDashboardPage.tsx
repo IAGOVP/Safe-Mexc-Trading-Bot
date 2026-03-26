@@ -95,7 +95,17 @@ export const FuturesDashboardPage = () => {
     setAssetsError("");
     try {
       const res = await fetchAccountAssets(email);
-      setAssets(res.data.map((a) => ({ currency: a.currency, availableBalance: a.availableBalance, equity: a.equity, unrealized: a.unrealized })));
+      if (!Array.isArray(res.data)) {
+        throw new Error("Unexpected MEXC account assets response.");
+      }
+      setAssets(
+        res.data.map((a) => ({
+          currency: a.currency,
+          availableBalance: a.availableBalance,
+          equity: a.equity,
+          unrealized: a.unrealized
+        }))
+      );
     } catch (err) {
       setAssetsError(err instanceof Error ? err.message : "Failed to load account assets.");
       setAssets(null);
@@ -109,6 +119,9 @@ export const FuturesDashboardPage = () => {
     setPositionsError("");
     try {
       const res = await fetchOpenPositions({ email, symbol: symbolNormal(symbol) });
+      if (!Array.isArray(res.data)) {
+        throw new Error("Unexpected MEXC open positions response.");
+      }
       setPositions(
         res.data.map((p) => ({
           positionId: String(p.positionId),
