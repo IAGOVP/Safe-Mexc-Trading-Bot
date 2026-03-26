@@ -168,3 +168,35 @@ export const cancelOrders = async (req: Request, res: Response): Promise<void> =
   }
 };
 
+export const getOpenOrders = async (req: Request, res: Response): Promise<void> => {
+  const { email, symbol, page_num, page_size } = req.query as {
+    email?: string;
+    symbol?: string;
+    page_num?: string;
+    page_size?: string;
+  };
+
+  if (!email) {
+    res.status(400).json({ message: "email is required." });
+    return;
+  }
+
+  try {
+    const { accessKey, secretKey } = await requireAccountKeys(email);
+    const response = await mexcPrivateGet<MexcEnvelope>(
+      accessKey,
+      secretKey,
+      "/api/v1/private/order/list/open_orders",
+      {
+        symbol,
+        page_num: page_num ?? "1",
+        page_size: page_size ?? "20"
+      }
+    );
+    assertMexcSuccess(response, "MEXC rejected open orders request.");
+    res.status(200).json({ data: response });
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : "Failed to load open orders." });
+  }
+};
+

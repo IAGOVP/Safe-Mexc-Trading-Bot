@@ -45,6 +45,42 @@ export interface AccountAssetsResponse {
   }>;
 }
 
+export interface OpenOrdersResponse {
+  success: boolean;
+  code: number;
+  data:
+    | Array<{
+        orderId: number | string;
+        symbol: string;
+        price: number;
+        vol: number;
+        dealVol?: number;
+        side: number;
+        category?: number;
+        orderType?: number;
+        createTime?: number;
+        state?: number;
+      }>
+    | {
+        pageSize: number;
+        totalCount: number;
+        totalPage: number;
+        currentPage: number;
+        resultList: Array<{
+          orderId: number | string;
+          symbol: string;
+          price: number;
+          vol: number;
+          dealVol?: number;
+          side: number;
+          category?: number;
+          orderType?: number;
+          createTime?: number;
+          state?: number;
+        }>;
+      };
+}
+
 export const fetchIndexPriceCandles = async (payload: {
   symbol: string;
   interval?: string;
@@ -87,6 +123,27 @@ export const fetchOpenPositions = async (payload: {
     throw new Error(body.message ?? "Failed to fetch open positions.");
   }
   const body = (await response.json()) as { data: OpenPositionsResponse };
+  return body.data;
+};
+
+export const fetchOpenOrders = async (payload: {
+  email: string;
+  symbol?: string;
+  pageNum?: number;
+  pageSize?: number;
+}): Promise<OpenOrdersResponse> => {
+  const params = new URLSearchParams();
+  params.set("email", payload.email);
+  if (payload.symbol) params.set("symbol", payload.symbol);
+  if (payload.pageNum) params.set("page_num", String(payload.pageNum));
+  if (payload.pageSize) params.set("page_size", String(payload.pageSize));
+
+  const response = await fetch(`${API_URL}/mexc/order/open?${params.toString()}`);
+  if (!response.ok) {
+    const body = (await response.json()) as { message?: string };
+    throw new Error(body.message ?? "Failed to fetch open orders.");
+  }
+  const body = (await response.json()) as { data: OpenOrdersResponse };
   return body.data;
 };
 

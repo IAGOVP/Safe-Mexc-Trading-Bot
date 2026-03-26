@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { fetchAccountAssets, fetchIndexPriceCandles, fetchOpenPositions, submitMarketOrder, cancelOrders } from "../api/mexcApi";
+import { fetchAccountAssets, fetchIndexPriceCandles, fetchOpenOrders, fetchOpenPositions, submitMarketOrder, cancelOrders } from "../api/mexcApi";
 
 type TradeAction = "open_long" | "open_short" | "close_long" | "close_short";
 type SupportedSymbol = "BTC_USDT" | "ETH_USDT" | "SOL_USDT";
@@ -55,6 +55,9 @@ export const FuturesDashboardPage = () => {
   const [positions, setPositions] = useState<Array<{ positionId: string; symbol: string; positionType: number; holdVol: number; holdAvgPrice: number; realised: number; leverage: number }> | null>(
     null
   );
+  const [openOrders, setOpenOrders] = useState<Array<{ orderId: string; symbol: string; side: number; price: number; vol: number; dealVol: number }> | null>(null);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState("");
 
   const [orderAction, setOrderAction] = useState<TradeAction>("open_long");
   const [openType, setOpenType] = useState<1 | 2>(1);
@@ -149,6 +152,35 @@ export const FuturesDashboardPage = () => {
     }
   };
 
+  const loadOpenOrders = async () => {
+    setOrdersLoading(true);
+    setOrdersError("");
+    try {
+      const res = await fetchOpenOrders({ email, symbol: symbolNormal(symbol), pageNum: 1, pageSize: 20 });
+      const rawList = Array.isArray(res.data)
+        ? res.data
+        : res.data && typeof res.data === "object" && Array.isArray(res.data.resultList)
+          ? res.data.resultList
+          : null;
+      if (!rawList) throw new Error("Unexpected MEXC open orders response.");
+      setOpenOrders(
+        rawList.map((o) => ({
+          orderId: String(o.orderId),
+          symbol: o.symbol,
+          side: Number(o.side),
+          price: Number(o.price),
+          vol: Number(o.vol),
+          dealVol: Number(o.dealVol ?? 0)
+        }))
+      );
+    } catch (err) {
+      setOrdersError(err instanceof Error ? err.message : "Failed to load open orders.");
+      setOpenOrders(null);
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!currentAccount) return;
     loadCandles();
@@ -158,8 +190,15 @@ export const FuturesDashboardPage = () => {
     if (!currentAccount) return;
     loadAssets();
     loadPositions();
+    loadOpenOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAccount]);
+
+  useEffect(() => {
+    if (!currentAccount) return;
+    loadOpenOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol]);
 
   const isOpening = orderAction === "open_long" || orderAction === "open_short";
   const side = actionToSide(orderAction);
@@ -543,6 +582,7 @@ export const FuturesDashboardPage = () => {
                       setOrderResult("Submitted.");
                     }
                     await loadPositions();
+                    await loadOpenOrders();
                   } catch (err) {
                     setOrderError(err instanceof Error ? err.message : "Order failed.");
                   } finally {
@@ -560,6 +600,44 @@ export const FuturesDashboardPage = () => {
         </div>
 
         <div className="mt-6 border-t border-sky-500/15 pt-6">
+          <div className="mb-6">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-slate-200">Open Orders</h4>
+              <button className="ghost-btn rounded-lg px-3 py-1.5 text-xs text-slate-100" onClick={loadOpenOrders} disabled={ordersLoading}>
+                {ordersLoading ? "Loading..." : "Refresh"}
+              </button>
+            </div>
+            {ordersError ? <p className="mt-2 text-sm text-rose-400">{ordersError}</p> : null}
+            {openOrders && openOrders.length > 0 ? (
+              <div className="smart-scroll mt-3 max-h-44 overflow-auto rounded-lg border border-sky-500/10">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-950/40">
+                    <tr className="text-left text-slate-400">
+                      <th className="px-3 py-2">Order ID</th>
+                      <th className="px-3 py-2">Symbol</th>
+                      <th className="px-3 py-2">Side</th>
+                      <th className="px-3 py-2">Price</th>
+                      <th className="px-3 py-2">Vol</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {openOrders.map((o) => (
+                      <tr key={o.orderId} className="border-t border-sky-500/10 text-slate-200">
+                        <td className="px-3 py-2">{o.orderId}</td>
+                        <td className="px-3 py-2">{o.symbol}</td>
+                        <td className="px-3 py-2">{o.side}</td>
+                        <td className="px-3 py-2">{o.price.toFixed(4)}</td>
+                        <td className="px-3 py-2">{o.dealVol > 0 ? `${o.dealVol}/${o.vol}` : o.vol}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-slate-400">{ordersLoading ? "Loading open orders..." : "No open orders."}</p>
+            )}
+          </div>
+
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h4 className="text-sm font-semibold text-slate-200">Cancel Order</h4>
@@ -586,6 +664,7 @@ export const FuturesDashboardPage = () => {
                     setCancelResult("Cancel request sent.");
                     setCancelOrderId("");
                     await loadPositions();
+                    await loadOpenOrders();
                   } catch (err) {
                     setCancelError(err instanceof Error ? err.message : "Cancel failed.");
                   } finally {
