@@ -35,12 +35,12 @@ export const SignUpDialog = ({ onClose }: SignUpDialogProps) => {
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/70 p-4">
-      <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6">
-        <h2 className="text-xl font-semibold">Sign Up</h2>
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/75 p-4">
+      <div className="glass-card w-full max-w-md rounded-2xl p-6">
+        <h2 className="bg-gradient-to-r from-sky-300 to-blue-400 bg-clip-text text-xl font-semibold text-transparent">Sign Up</h2>
         <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
           <input
-            className="w-full rounded border border-slate-600 bg-slate-800 px-3 py-2"
+            className="input-theme w-full rounded-lg px-3 py-2"
             type="email"
             placeholder="Email"
             value={email}
@@ -48,7 +48,7 @@ export const SignUpDialog = ({ onClose }: SignUpDialogProps) => {
             required
           />
           <input
-            className="w-full rounded border border-slate-600 bg-slate-800 px-3 py-2"
+            className="input-theme w-full rounded-lg px-3 py-2"
             type="password"
             placeholder="Password"
             value={password}
@@ -57,7 +57,7 @@ export const SignUpDialog = ({ onClose }: SignUpDialogProps) => {
           />
           <PasswordStrength password={password} />
           <input
-            className="w-full rounded border border-slate-600 bg-slate-800 px-3 py-2"
+            className="input-theme w-full rounded-lg px-3 py-2"
             type="password"
             placeholder="Confirm Password"
             value={confirmPassword}
@@ -68,10 +68,10 @@ export const SignUpDialog = ({ onClose }: SignUpDialogProps) => {
           {error ? <p className="text-sm text-rose-400">{error}</p> : null}
 
           <div className="flex justify-end gap-2 pt-1">
-            <button className="rounded border border-slate-600 px-4 py-2" type="button" onClick={onClose}>
+            <button className="ghost-btn rounded-lg px-4 py-2" type="button" onClick={onClose}>
               Cancel
             </button>
-            <button className="rounded bg-indigo-500 px-4 py-2 font-medium text-white" type="submit" disabled={isLoading}>
+            <button className="neon-btn rounded-lg px-4 py-2 font-medium text-white" type="submit" disabled={isLoading}>
               {isLoading ? "Creating..." : "Create Account"}
             </button>
           </div>

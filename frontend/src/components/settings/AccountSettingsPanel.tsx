@@ -25,19 +25,21 @@ export const AccountSettingsPanel = () => {
   }
 
   return (
-    <div className="mx-auto mt-8 w-full max-w-2xl rounded-xl border border-slate-700 bg-slate-900 p-6">
-      <h2 className="text-xl font-semibold">Account Settings</h2>
+    <div className="glass-card mx-auto mt-8 w-full max-w-2xl rounded-2xl p-6">
+      <h2 className="bg-gradient-to-r from-sky-300 to-blue-400 bg-clip-text text-xl font-semibold text-transparent">
+        Account Settings
+      </h2>
       <p className="mt-1 text-sm text-slate-300">Email: {currentAccount.email}</p>
       <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
         <input
-          className="w-full rounded border border-slate-600 bg-slate-800 px-3 py-2"
+          className="input-theme w-full rounded-lg px-3 py-2"
           type="text"
           placeholder="MEXC API Key"
           value={mexcAPIKey}
           onChange={(e) => setMexcAPIKey(e.target.value)}
         />
         <input
-          className="w-full rounded border border-slate-600 bg-slate-800 px-3 py-2"
+          className="input-theme w-full rounded-lg px-3 py-2"
           type="password"
           placeholder="MEXC Secret Key"
           value={mexcSecretKey}
@@ -45,7 +47,7 @@ export const AccountSettingsPanel = () => {
         />
         {message ? <p className="text-sm text-emerald-400">{message}</p> : null}
         {error ? <p className="text-sm text-rose-400">{error}</p> : null}
-        <button className="rounded bg-indigo-500 px-4 py-2 font-medium text-white" type="submit">
+        <button className="neon-btn rounded-lg px-4 py-2 font-medium text-white" type="submit">
           Save Settings
         </button>
       </form>

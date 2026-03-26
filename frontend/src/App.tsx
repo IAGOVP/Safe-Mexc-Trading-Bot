@@ -13,7 +13,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen pb-12">
       <Navbar
         onSignInClick={() => setShowSignIn(true)}
         onSignUpClick={() => setShowSignUp(true)}

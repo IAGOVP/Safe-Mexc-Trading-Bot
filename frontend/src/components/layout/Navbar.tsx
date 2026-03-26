@@ -12,31 +12,33 @@ export const Navbar = ({ onSignInClick, onSignUpClick, onSettingsClick }: Navbar
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
-    <nav className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+    <nav className="sticky top-0 z-10 border-b border-sky-500/20 bg-slate-950/65 backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-        <h1 className="text-lg font-semibold">Safe MEXC Trading Bot</h1>
+        <h1 className="bg-gradient-to-r from-sky-300 to-blue-400 bg-clip-text text-lg font-semibold text-transparent">
+          Safe MEXC Trading Bot
+        </h1>
 
         {!currentAccount ? (
           <div className="flex gap-2">
-            <button className="rounded border border-slate-600 px-4 py-2" onClick={onSignInClick}>
+            <button className="ghost-btn rounded-lg px-4 py-2 text-slate-100" onClick={onSignInClick}>
               Sign In
             </button>
-            <button className="rounded bg-indigo-500 px-4 py-2 font-medium text-white" onClick={onSignUpClick}>
+            <button className="neon-btn rounded-lg px-4 py-2 font-medium text-white" onClick={onSignUpClick}>
               Sign Up
             </button>
           </div>
         ) : (
           <div className="relative">
             <button
-              className="rounded border border-slate-600 px-4 py-2"
+              className="ghost-btn rounded-lg px-4 py-2 text-slate-100"
               onClick={() => setIsMenuOpen((prev) => !prev)}
             >
               Menu
             </button>
             {isMenuOpen ? (
-              <div className="absolute right-0 mt-2 w-48 rounded border border-slate-700 bg-slate-900 p-1 shadow-lg">
+              <div className="glass-card absolute right-0 mt-2 w-48 rounded-xl p-1">
                 <button
-                  className="w-full rounded px-3 py-2 text-left hover:bg-slate-800"
+                  className="w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
                   onClick={() => {
                     onSettingsClick();
                     setIsMenuOpen(false);
@@ -45,7 +47,7 @@ export const Navbar = ({ onSignInClick, onSignUpClick, onSettingsClick }: Navbar
                   Settings
                 </button>
                 <button
-                  className="w-full rounded px-3 py-2 text-left hover:bg-slate-800"
+                  className="w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
                   onClick={() => {
                     signOut();
                     setIsMenuOpen(false);

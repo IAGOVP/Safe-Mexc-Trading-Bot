@@ -17,13 +17,17 @@ const calculateStrength = (password: string): { score: number; label: string } =
 };
 
 export const PasswordStrength = ({ password }: PasswordStrengthProps) => {
+  if (!password) {
+    return null;
+  }
+
   const { score, label } = calculateStrength(password);
   const percent = Math.max(10, score * 20);
-  const colorClass = label === "Strong" ? "bg-emerald-500" : label === "Medium" ? "bg-amber-400" : "bg-rose-500";
+  const colorClass = label === "Strong" ? "bg-cyan-400" : label === "Medium" ? "bg-blue-400" : "bg-rose-500";
 
   return (
     <div className="mt-2">
-      <div className="h-2 w-full rounded bg-slate-700">
+      <div className="h-2 w-full rounded bg-slate-800/90">
         <div className={`h-2 rounded transition-all ${colorClass}`} style={{ width: `${percent}%` }} />
       </div>
       <p className="mt-1 text-xs text-slate-300">Password strength: {label}</p>
