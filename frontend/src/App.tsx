@@ -5,6 +5,7 @@ import { Navbar } from "./components/layout/Navbar";
 import { AccountSettingsPanel } from "./components/settings/AccountSettingsPanel";
 import { useAuth } from "./context/AuthContext";
 import { HomePage } from "./pages/HomePage";
+import { FuturesDashboardPage } from "./pages/FuturesDashboardPage";
 
 function App() {
   const { currentAccount } = useAuth();
@@ -20,7 +21,7 @@ function App() {
         onSettingsClick={() => setShowSettings(true)}
       />
 
-      <HomePage />
+      {currentAccount ? <FuturesDashboardPage /> : <HomePage />}
       {currentAccount && showSettings ? <AccountSettingsPanel /> : null}
 
       {showSignUp ? <SignUpDialog onClose={() => setShowSignUp(false)} /> : null}
