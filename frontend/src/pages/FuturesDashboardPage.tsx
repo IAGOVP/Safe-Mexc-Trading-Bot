@@ -3,8 +3,13 @@ import { useAuth } from "../context/AuthContext";
 import { fetchAccountAssets, fetchIndexPriceCandles, fetchOpenPositions, submitMarketOrder, cancelOrders } from "../api/mexcApi";
 
 type TradeAction = "open_long" | "open_short" | "close_long" | "close_short";
+type SupportedSymbol = "BTC_USDT" | "ETH_USDT" | "SOL_USDT";
+const SUPPORTED_SYMBOLS: SupportedSymbol[] = ["BTC_USDT", "ETH_USDT", "SOL_USDT"];
 
-const symbolNormal = (s: string) => s.trim().toUpperCase().replace("/", "_");
+const symbolNormal = (s: string): SupportedSymbol => {
+  const normalized = s.trim().toUpperCase().replace("/", "_");
+  return SUPPORTED_SYMBOLS.includes(normalized as SupportedSymbol) ? (normalized as SupportedSymbol) : "BTC_USDT";
+};
 
 const actionToSide = (action: TradeAction): number => {
   switch (action) {
@@ -25,7 +30,7 @@ export const FuturesDashboardPage = () => {
   const { currentAccount } = useAuth();
   const email = currentAccount?.email ?? "";
 
-  const [symbol, setSymbol] = useState("BTC_USDT");
+  const [symbol, setSymbol] = useState<SupportedSymbol>("BTC_USDT");
   const [interval, setInterval] = useState("Min15");
 
   const [candlesLoading, setCandlesLoading] = useState(false);
@@ -180,11 +185,17 @@ export const FuturesDashboardPage = () => {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div>
                 <label className="text-xs text-slate-300">Symbol</label>
-                <input
+                <select
                   className="input-theme mt-1 w-40 rounded-lg px-3 py-2"
                   value={symbol}
-                  onChange={(e) => setSymbol(e.target.value)}
-                />
+                  onChange={(e) => setSymbol(symbolNormal(e.target.value))}
+                >
+                  {SUPPORTED_SYMBOLS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="text-xs text-slate-300">Interval</label>
