@@ -1,11 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { fetchAccountAssets, fetchIndexPriceCandles, fetchOpenOrders, fetchOpenPositions, submitMarketOrder, cancelOrders } from "../api/mexcApi";
+import { fetchAccountAssets, fetchIndexPriceCandles, fetchOpenOrders, fetchOpenPositions, submitOrder, submitTriggerOrder, cancelOrders } from "../api/mexcApi";
 
 type TradeAction = "open_long" | "open_short" | "close_long" | "close_short";
 type SupportedSymbol = "BTC_USDT" | "ETH_USDT" | "SOL_USDT";
+type TicketOrderMode = "regular" | "trigger";
 const SUPPORTED_SYMBOLS: SupportedSymbol[] = ["BTC_USDT", "ETH_USDT", "SOL_USDT"];
 const ASSET_FOCUS_OPTIONS = ["BTC", "ETH", "SOL", "TAO"] as const;
+const REGULAR_ORDER_TYPES = [
+  { value: 1, label: "Limit" },
+  { value: 2, label: "Post Only" },
+  { value: 3, label: "IOC" },
+  { value: 4, label: "FOK" },
+  { value: 5, label: "Market" },
+  { value: 6, label: "Chase / MTL" }
+] as const;
 
 const symbolNormal = (s: string): SupportedSymbol => {
   const normalized = s.trim().toUpperCase().replace("/", "_");
@@ -60,10 +69,16 @@ export const FuturesDashboardPage = () => {
   const [ordersError, setOrdersError] = useState("");
 
   const [orderAction, setOrderAction] = useState<TradeAction>("open_long");
+  const [ticketOrderMode, setTicketOrderMode] = useState<TicketOrderMode>("regular");
+  const [orderType, setOrderType] = useState<number>(5);
   const [openType, setOpenType] = useState<1 | 2>(1);
   const [leverage, setLeverage] = useState(5);
   const [vol, setVol] = useState<number>(1);
   const [priceOverride, setPriceOverride] = useState<string>("");
+  const [triggerPriceOverride, setTriggerPriceOverride] = useState<string>("");
+  const [triggerType, setTriggerType] = useState<1 | 2>(1);
+  const [trend, setTrend] = useState<1 | 2 | 3>(1);
+  const [executeCycle, setExecuteCycle] = useState<1 | 2>(1);
   const [orderLoading, setOrderLoading] = useState(false);
   const [orderError, setOrderError] = useState("");
   const [orderResult, setOrderResult] = useState<string>("");
@@ -85,6 +100,12 @@ export const FuturesDashboardPage = () => {
     const num = Number(trimmed);
     return Number.isFinite(num) ? num : lastPrice ?? 0;
   }, [lastPrice, priceOverride]);
+  const effectiveTriggerPrice = useMemo(() => {
+    const trimmed = triggerPriceOverride.trim();
+    if (!trimmed) return lastPrice ?? 0;
+    const num = Number(trimmed);
+    return Number.isFinite(num) ? num : lastPrice ?? 0;
+  }, [lastPrice, triggerPriceOverride]);
 
   const loadCandles = async () => {
     if (!symbol) return;
@@ -219,6 +240,9 @@ export const FuturesDashboardPage = () => {
     if (!keyword) return assets;
     return assets.filter((a) => a.currency.toUpperCase().includes(keyword));
   }, [assets, assetSearch]);
+  const totalAvailableFuturesBalance = useMemo(() => {
+    return (assets ?? []).reduce((sum, a) => sum + a.availableBalance, 0);
+  }, [assets]);
 
   if (!currentAccount) {
     return (
@@ -456,12 +480,38 @@ export const FuturesDashboardPage = () => {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300/90">Order Ticket</p>
-            <h3 className="mt-1 text-lg font-semibold">Market Trading (MVP)</h3>
+            <h3 className="mt-1 text-lg font-semibold">Futures Order Ticket</h3>
           </div>
-          <p className="text-sm text-slate-400">Uses last index candle close as default price.</p>
+          <p className="text-sm text-slate-400">Uses last index candle close as default price for price and trigger fields.</p>
         </div>
+        <p className="mt-3 text-sm text-slate-300">
+          Total available futures balance: <span className="font-semibold text-slate-100">{totalAvailableFuturesBalance.toFixed(6)}</span>
+        </p>
 
         <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <div>
+            <label className="text-xs text-slate-300">Order Mode</label>
+            <select
+              className="input-theme mt-1 w-full rounded-lg px-3 py-2"
+              value={ticketOrderMode}
+              onChange={(e) => setTicketOrderMode(e.target.value as TicketOrderMode)}
+            >
+              <option value="regular">Regular</option>
+              <option value="trigger">Trigger</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-300">Order Type</label>
+            <select className="input-theme mt-1 w-full rounded-lg px-3 py-2" value={orderType} onChange={(e) => setOrderType(Number(e.target.value))}>
+              {REGULAR_ORDER_TYPES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="text-xs text-slate-300">Action</label>
             <select className="input-theme mt-1 w-full rounded-lg px-3 py-2" value={orderAction} onChange={(e) => setOrderAction(e.target.value as TradeAction)}>
@@ -554,6 +604,44 @@ export const FuturesDashboardPage = () => {
             <p className="mt-1 text-xs text-slate-400">Effective price: {effectivePrice.toFixed(4)}</p>
           </div>
 
+          {ticketOrderMode === "trigger" ? (
+            <>
+              <div>
+                <label className="text-xs text-slate-300">Trigger Price</label>
+                <input
+                  className="input-theme mt-1 w-full rounded-lg px-3 py-2"
+                  type="text"
+                  placeholder={lastPrice !== null ? `Auto: ${lastPrice.toFixed(4)}` : "Auto trigger price"}
+                  value={triggerPriceOverride}
+                  onChange={(e) => setTriggerPriceOverride(e.target.value)}
+                />
+                <p className="mt-1 text-xs text-slate-400">Effective trigger: {effectiveTriggerPrice.toFixed(4)}</p>
+              </div>
+              <div>
+                <label className="text-xs text-slate-300">Trigger Type</label>
+                <select className="input-theme mt-1 w-full rounded-lg px-3 py-2" value={triggerType} onChange={(e) => setTriggerType(Number(e.target.value) as 1 | 2)}>
+                  <option value={1}>Greater Than Or Equal</option>
+                  <option value={2}>Less Than Or Equal</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-300">Trigger Price Source</label>
+                <select className="input-theme mt-1 w-full rounded-lg px-3 py-2" value={trend} onChange={(e) => setTrend(Number(e.target.value) as 1 | 2 | 3)}>
+                  <option value={1}>Latest Price</option>
+                  <option value={2}>Fair Price</option>
+                  <option value={3}>Index Price</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-300">Execute Cycle</label>
+                <select className="input-theme mt-1 w-full rounded-lg px-3 py-2" value={executeCycle} onChange={(e) => setExecuteCycle(Number(e.target.value) as 1 | 2)}>
+                  <option value={1}>24 Hours</option>
+                  <option value={2}>7 Days</option>
+                </select>
+              </div>
+            </>
+          ) : null}
+
           <div className="md:col-span-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-slate-400">
               side: <span className="text-slate-200">{side}</span>
@@ -567,19 +655,37 @@ export const FuturesDashboardPage = () => {
                   setOrderError("");
                   setOrderResult("");
                   try {
-                    const res = await submitMarketOrder({
-                      email,
-                      symbol: symbolNormal(symbol),
-                      price: effectivePrice,
-                      vol,
-                      leverage: isOpening ? leverage : undefined,
-                      side,
-                      openType
-                    });
+                    const selectedOrderType = ticketOrderMode === "trigger" ? Math.min(orderType, 5) : orderType;
+                    const res =
+                      ticketOrderMode === "trigger"
+                        ? await submitTriggerOrder({
+                            email,
+                            symbol: symbolNormal(symbol),
+                            price: selectedOrderType === 5 ? undefined : effectivePrice,
+                            vol,
+                            leverage: isOpening ? leverage : undefined,
+                            side,
+                            openType,
+                            triggerPrice: effectiveTriggerPrice,
+                            triggerType,
+                            executeCycle,
+                            orderType: selectedOrderType,
+                            trend
+                          })
+                        : await submitOrder({
+                            email,
+                            symbol: symbolNormal(symbol),
+                            price: effectivePrice,
+                            vol,
+                            leverage: isOpening ? leverage : undefined,
+                            side,
+                            type: selectedOrderType,
+                            openType
+                          });
                     if (res.orderId) {
-                      setOrderResult(`Submitted. orderId=${res.orderId}`);
+                      setOrderResult(`${ticketOrderMode === "trigger" ? "Trigger" : "Order"} submitted. orderId=${res.orderId}`);
                     } else {
-                      setOrderResult("Submitted.");
+                      setOrderResult(`${ticketOrderMode === "trigger" ? "Trigger" : "Order"} submitted.`);
                     }
                     await loadPositions();
                     await loadOpenOrders();

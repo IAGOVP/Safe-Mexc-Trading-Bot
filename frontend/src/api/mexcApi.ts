@@ -147,16 +147,16 @@ export const fetchOpenOrders = async (payload: {
   return body.data;
 };
 
-export const submitMarketOrder = async (payload: {
+export const submitOrder = async (payload: {
   email: string;
   symbol: string;
   price: number;
   vol: number;
   leverage?: number;
   side: number;
+  type: number;
   openType: number;
 }): Promise<{ orderId?: string; data?: unknown }> => {
-  // MEXC docs: type=5 is market
   const response = await fetch(`${API_URL}/mexc/order/submit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -167,7 +167,7 @@ export const submitMarketOrder = async (payload: {
       vol: payload.vol,
       leverage: payload.leverage,
       side: payload.side,
-      type: 5,
+      type: payload.type,
       openType: payload.openType
     })
   });
@@ -188,6 +188,68 @@ export const submitMarketOrder = async (payload: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const orderId = (mexcInner as any).orderId;
     return { orderId: String(orderId) };
+  }
+
+  if (mexcInner !== undefined) {
+    return { data: mexcInner };
+  }
+
+  return { data: body.data };
+};
+
+export const submitTriggerOrder = async (payload: {
+  email: string;
+  symbol: string;
+  price?: number;
+  vol: number;
+  leverage?: number;
+  side: number;
+  openType: number;
+  triggerPrice: number;
+  triggerType: number;
+  executeCycle: number;
+  orderType: number;
+  trend: number;
+}): Promise<{ orderId?: string; data?: unknown }> => {
+  const response = await fetch(`${API_URL}/mexc/order/submit-trigger`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: payload.email,
+      symbol: payload.symbol,
+      price: payload.price,
+      vol: payload.vol,
+      leverage: payload.leverage,
+      side: payload.side,
+      openType: payload.openType,
+      triggerPrice: payload.triggerPrice,
+      triggerType: payload.triggerType,
+      executeCycle: payload.executeCycle,
+      orderType: payload.orderType,
+      trend: payload.trend
+    })
+  });
+
+  if (!response.ok) {
+    const body = (await response.json()) as { message?: string };
+    throw new Error(body.message ?? "Failed to submit trigger order.");
+  }
+
+  const body = (await response.json()) as {
+    data: {
+      data?: unknown;
+    };
+  };
+
+  const mexcInner = body.data?.data;
+  if (mexcInner && typeof mexcInner === "object" && "orderId" in mexcInner) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const orderId = (mexcInner as any).orderId;
+    return { orderId: String(orderId) };
+  }
+
+  if (typeof mexcInner === "number" || typeof mexcInner === "string") {
+    return { orderId: String(mexcInner) };
   }
 
   if (mexcInner !== undefined) {

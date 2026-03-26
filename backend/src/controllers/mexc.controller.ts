@@ -148,6 +148,76 @@ export const submitOrder = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
+export const submitTriggerOrder = async (req: Request, res: Response): Promise<void> => {
+  const { email, symbol, price, vol, leverage, side, openType, triggerPrice, triggerType, executeCycle, orderType, trend, externalOid } = req.body as {
+    email?: string;
+    symbol?: string;
+    price?: number | string;
+    vol?: number | string;
+    leverage?: number;
+    side?: number;
+    openType?: number;
+    triggerPrice?: number | string;
+    triggerType?: number;
+    executeCycle?: number;
+    orderType?: number;
+    trend?: number;
+    externalOid?: string;
+  };
+
+  const isOpening = side === 1 || side === 3;
+  if (
+    !email ||
+    !symbol ||
+    vol === undefined ||
+    side === undefined ||
+    openType === undefined ||
+    triggerPrice === undefined ||
+    triggerType === undefined ||
+    executeCycle === undefined ||
+    orderType === undefined ||
+    trend === undefined
+  ) {
+    res.status(400).json({
+      message: "email, symbol, vol, side, openType, triggerPrice, triggerType, executeCycle, orderType, and trend are required."
+    });
+    return;
+  }
+
+  if (isOpening && leverage === undefined) {
+    res.status(400).json({ message: "leverage is required when opening a position (side 1 or 3)." });
+    return;
+  }
+
+  try {
+    const { accessKey, secretKey } = await requireAccountKeys(email);
+    const response = await mexcPrivatePost<MexcEnvelope>(
+      accessKey,
+      secretKey,
+      "/api/v1/private/planorder/place",
+      {},
+      {
+        symbol,
+        price: price ?? undefined,
+        vol,
+        leverage: leverage ?? undefined,
+        side,
+        openType,
+        triggerPrice,
+        triggerType,
+        executeCycle,
+        orderType,
+        trend,
+        externalOid: externalOid ?? undefined
+      }
+    );
+    assertMexcSuccess(response, "MEXC rejected trigger order request.");
+    res.status(200).json({ data: response });
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : "Failed to submit trigger order." });
+  }
+};
+
 export const cancelOrders = async (req: Request, res: Response): Promise<void> => {
   const { email, orderIds } = req.body as { email?: string; orderIds?: Array<number | string> };
   if (!email || !Array.isArray(orderIds) || orderIds.length === 0) {
