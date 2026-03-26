@@ -5,6 +5,7 @@ import { fetchAccountAssets, fetchIndexPriceCandles, fetchOpenPositions, submitM
 type TradeAction = "open_long" | "open_short" | "close_long" | "close_short";
 type SupportedSymbol = "BTC_USDT" | "ETH_USDT" | "SOL_USDT";
 const SUPPORTED_SYMBOLS: SupportedSymbol[] = ["BTC_USDT", "ETH_USDT", "SOL_USDT"];
+const ASSET_FOCUS_OPTIONS = ["BTC", "ETH", "SOL", "TAO"] as const;
 
 const symbolNormal = (s: string): SupportedSymbol => {
   const normalized = s.trim().toUpperCase().replace("/", "_");
@@ -47,6 +48,8 @@ export const FuturesDashboardPage = () => {
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [assetsError, setAssetsError] = useState("");
   const [positionsError, setPositionsError] = useState("");
+  const [showAllAssetsDialog, setShowAllAssetsDialog] = useState(false);
+  const [assetSearch, setAssetSearch] = useState("");
 
   const [assets, setAssets] = useState<Array<{ currency: string; availableBalance: number; equity: number; unrealized: number }> | null>(null);
   const [positions, setPositions] = useState<Array<{ positionId: string; symbol: string; positionType: number; holdVol: number; holdAvgPrice: number; realised: number; leverage: number }> | null>(
@@ -160,6 +163,23 @@ export const FuturesDashboardPage = () => {
 
   const isOpening = orderAction === "open_long" || orderAction === "open_short";
   const side = actionToSide(orderAction);
+  const focusedAssets = useMemo(() => {
+    const map = new Map<string, { currency: string; availableBalance: number; equity: number; unrealized: number }>();
+    for (const a of assets ?? []) {
+      map.set(a.currency.toUpperCase(), a);
+    }
+    return ASSET_FOCUS_OPTIONS.map((currency) => ({
+      currency,
+      value: map.get(currency) ?? null
+    }));
+  }, [assets]);
+
+  const filteredAllAssets = useMemo(() => {
+    if (!assets) return [];
+    const keyword = assetSearch.trim().toUpperCase();
+    if (!keyword) return assets;
+    return assets.filter((a) => a.currency.toUpperCase().includes(keyword));
+  }, [assets, assetSearch]);
 
   if (!currentAccount) {
     return (
@@ -275,13 +295,26 @@ export const FuturesDashboardPage = () => {
           {assetsError ? <p className="mt-3 text-sm text-rose-400">{assetsError}</p> : null}
           {assets ? (
             <div className="mt-4">
-              <h4 className="text-sm font-semibold text-slate-200">Assets</h4>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {assets.slice(0, 6).map((a) => (
-                  <div key={a.currency} className="rounded-xl border border-sky-500/10 bg-slate-950/30 p-3">
-                    <p className="text-xs text-slate-400">{a.currency}</p>
-                    <p className="mt-1 text-sm font-semibold">{a.availableBalance.toFixed(4)}</p>
-                    <p className="mt-1 text-xs text-slate-400">Equity: {a.equity.toFixed(4)}</p>
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-slate-200">Assets</h4>
+                <button
+                  className="ghost-btn rounded-lg px-3 py-1.5 text-xs text-slate-100"
+                  onClick={() => setShowAllAssetsDialog(true)}
+                >
+                  View All
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                {focusedAssets.map((item) => (
+                  <div key={item.currency} className="rounded-xl border border-sky-500/10 bg-slate-950/30 p-3">
+                    <p className="text-xs text-slate-400">{item.currency}</p>
+                    <p className="mt-1 text-sm font-semibold">
+                      Available: {item.value ? item.value.availableBalance.toFixed(6) : "0.000000"}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">Equity: {item.value ? item.value.equity.toFixed(6) : "0.000000"}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Unrealized: {item.value ? item.value.unrealized.toFixed(6) : "0.000000"}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -332,6 +365,54 @@ export const FuturesDashboardPage = () => {
         </div>
       </section>
 
+      {showAllAssetsDialog ? (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/75 p-4">
+          <div className="glass-card w-full max-w-2xl rounded-2xl p-6">
+            <div className="flex items-center justify-between">
+              <h3 className="bg-gradient-to-r from-sky-300 to-blue-400 bg-clip-text text-lg font-semibold text-transparent">All Assets</h3>
+              <button className="ghost-btn rounded-lg px-3 py-1.5 text-sm text-slate-100" onClick={() => setShowAllAssetsDialog(false)}>
+                Close
+              </button>
+            </div>
+            <div className="mt-4">
+              <input
+                className="input-theme w-full rounded-lg px-3 py-2"
+                type="text"
+                placeholder="Search asset by currency (e.g. USDT, BTC)"
+                value={assetSearch}
+                onChange={(e) => setAssetSearch(e.target.value)}
+              />
+            </div>
+            <div className="smart-scroll mt-4 max-h-[420px] overflow-auto">
+              {filteredAllAssets.length > 0 ? (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-400">
+                      <th className="py-2 pr-3">Currency</th>
+                      <th className="py-2 pr-3">Available</th>
+                      <th className="py-2 pr-3">Equity</th>
+                      <th className="py-2 pr-3">Unrealized</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAllAssets.map((a) => (
+                      <tr key={a.currency} className="border-t border-sky-500/10 text-slate-200">
+                        <td className="py-2 pr-3">{a.currency}</td>
+                        <td className="py-2 pr-3">{a.availableBalance.toFixed(6)}</td>
+                        <td className="py-2 pr-3">{a.equity.toFixed(6)}</td>
+                        <td className="py-2 pr-3">{a.unrealized.toFixed(6)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-sm text-slate-400">No assets match your search.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <section className="mt-4 glass-card rounded-2xl p-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -362,27 +443,59 @@ export const FuturesDashboardPage = () => {
 
           <div>
             <label className="text-xs text-slate-300">Quantity (vol)</label>
-            <input
-              className="input-theme mt-1 w-full rounded-lg px-3 py-2"
-              type="number"
-              step="any"
-              value={vol}
-              onChange={(e) => setVol(Number(e.target.value))}
-              min={0}
-            />
+            <div className="mt-1 flex items-center gap-2">
+              <button
+                className="ghost-btn inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-100"
+                type="button"
+                onClick={() => setVol((prev) => Math.max(0, Number((prev - 1).toFixed(6))))}
+              >
+                -
+              </button>
+              <input
+                className="input-theme w-full rounded-lg px-3 py-2 text-center"
+                type="number"
+                step="any"
+                value={vol}
+                onChange={(e) => setVol(Number(e.target.value))}
+                min={0}
+              />
+              <button
+                className="neon-btn inline-flex h-9 w-9 items-center justify-center rounded-lg text-white"
+                type="button"
+                onClick={() => setVol((prev) => Number((prev + 1).toFixed(6)))}
+              >
+                +
+              </button>
+            </div>
           </div>
 
           {isOpening ? (
             <div>
               <label className="text-xs text-slate-300">Leverage</label>
-              <input
-                className="input-theme mt-1 w-full rounded-lg px-3 py-2"
-                type="number"
-                step="1"
-                value={leverage}
-                onChange={(e) => setLeverage(Number(e.target.value))}
-                min={1}
-              />
+              <div className="mt-1 flex items-center gap-2">
+                <button
+                  className="ghost-btn inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-100"
+                  type="button"
+                  onClick={() => setLeverage((prev) => Math.max(1, prev - 1))}
+                >
+                  -
+                </button>
+                <input
+                  className="input-theme w-full rounded-lg px-3 py-2 text-center"
+                  type="number"
+                  step="1"
+                  value={leverage}
+                  onChange={(e) => setLeverage(Math.max(1, Number(e.target.value) || 1))}
+                  min={1}
+                />
+                <button
+                  className="neon-btn inline-flex h-9 w-9 items-center justify-center rounded-lg text-white"
+                  type="button"
+                  onClick={() => setLeverage((prev) => prev + 1)}
+                >
+                  +
+                </button>
+              </div>
             </div>
           ) : (
             <div className="text-sm text-slate-400">
