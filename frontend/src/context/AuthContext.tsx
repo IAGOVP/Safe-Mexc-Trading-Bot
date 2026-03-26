@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { signInRequest, signUpRequest, updateMexcKeysRequest, updatePasswordRequest } from "../api/authApi";
 import { Account } from "../types/account";
 
@@ -16,9 +16,43 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const AUTH_STORAGE_KEY = "safemexc.auth.account";
+
+const getStoredAccount = (): Account | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Account;
+    if (!parsed?.email || !parsed?.id) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+};
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
+  const [currentAccount, setCurrentAccount] = useState<Account | null>(() => getStoredAccount());
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (currentAccount) {
+      window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(currentAccount));
+    } else {
+      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+  }, [currentAccount]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
