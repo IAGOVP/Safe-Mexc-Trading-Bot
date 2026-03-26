@@ -61,3 +61,24 @@ export const updateMexcKeysRequest = async (payload: {
   const body = (await response.json()) as AccountResponse;
   return body.account;
 };
+
+export const updatePasswordRequest = async (payload: {
+  email: string;
+  currentPassword: string;
+  newPassword: string;
+  confirmNewPassword: string;
+}): Promise<Account> => {
+  const response = await fetch(`${API_URL}/auth/settings/password`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const body = (await response.json()) as { message?: string };
+    throw new Error(body.message ?? "Failed to update password.");
+  }
+
+  const body = (await response.json()) as AccountResponse;
+  return body.account;
+};

@@ -99,3 +99,39 @@ export const updateKeys = async (req: Request, res: Response): Promise<void> => 
 
   res.status(200).json({ account: sanitizeAccount(account) });
 };
+
+export const updatePassword = async (req: Request, res: Response): Promise<void> => {
+  const { email, currentPassword, newPassword, confirmNewPassword } = req.body as {
+    email?: string;
+    currentPassword?: string;
+    newPassword?: string;
+    confirmNewPassword?: string;
+  };
+
+  if (!email || !currentPassword || !newPassword || !confirmNewPassword) {
+    res.status(400).json({ message: "Email, current password, new password, and confirm password are required." });
+    return;
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    res.status(400).json({ message: "New password and confirm password do not match." });
+    return;
+  }
+
+  const account = await Account.findOne({ email: email.toLowerCase() });
+  if (!account) {
+    res.status(404).json({ message: "Account not found." });
+    return;
+  }
+
+  const isMatch = await bcrypt.compare(currentPassword, account.password);
+  if (!isMatch) {
+    res.status(401).json({ message: "Current password is incorrect." });
+    return;
+  }
+
+  account.password = await bcrypt.hash(newPassword, 10);
+  await account.save();
+
+  res.status(200).json({ account: sanitizeAccount(account) });
+};

@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState } from "react";
-import { signInRequest, signUpRequest, updateMexcKeysRequest } from "../api/authApi";
+import { signInRequest, signUpRequest, updateMexcKeysRequest, updatePasswordRequest } from "../api/authApi";
 import { Account } from "../types/account";
 
 interface AuthContextValue {
@@ -8,6 +8,11 @@ interface AuthContextValue {
   signIn: (payload: { email: string; password: string }) => Promise<void>;
   signOut: () => void;
   updateMexcKeys: (payload: { mexcAPIKey: string; mexcSecretKey: string }) => Promise<void>;
+  updatePassword: (payload: {
+    currentPassword: string;
+    newPassword: string;
+    confirmNewPassword: string;
+  }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -37,6 +42,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           email: currentAccount.email,
           mexcAPIKey,
           mexcSecretKey
+        });
+        setCurrentAccount(updated);
+      },
+      updatePassword: async ({ currentPassword, newPassword, confirmNewPassword }) => {
+        if (!currentAccount) {
+          throw new Error("No signed-in account.");
+        }
+        const updated = await updatePasswordRequest({
+          email: currentAccount.email,
+          currentPassword,
+          newPassword,
+          confirmNewPassword
         });
         setCurrentAccount(updated);
       }
