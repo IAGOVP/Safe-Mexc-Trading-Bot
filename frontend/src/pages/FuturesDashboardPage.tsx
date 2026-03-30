@@ -11,6 +11,7 @@ import {
   cancelOrders
 } from "../api/binanceApi";
 import { MarkPriceCandleChart } from "../components/charts/MarkPriceCandleChart";
+import { useBinanceMarkPriceStream } from "../hooks/useBinanceMarkPriceStream";
 
 type TradeAction = "open_long" | "open_short" | "close_long" | "close_short";
 type SupportedSymbol = "BTCUSDT" | "ETHUSDT" | "SOLUSDT";
@@ -111,6 +112,14 @@ export const FuturesDashboardPage = () => {
     if (!c || c.length === 0) return null;
     return c[c.length - 1];
   }, [candles]);
+
+  const {
+    markPrice: liveMarkPrice,
+    indexPrice: liveIndexPrice,
+    status: markWsStatus,
+    lastEventTime: markWsEventTime,
+    errorMessage: markWsError
+  } = useBinanceMarkPriceStream(symbolNormal(symbol), Boolean(currentAccount));
 
   const effectivePrice = useMemo(() => {
     const trimmed = priceOverride.trim();
@@ -1002,8 +1011,62 @@ export const FuturesDashboardPage = () => {
 
         {candlesError ? <p className="mt-4 text-sm text-rose-400">{candlesError}</p> : null}
 
+        <div className="mt-4 rounded-xl border border-sky-500/20 bg-slate-950/40 px-4 py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Live (Binance WebSocket)</p>
+              <div className="mt-1 flex flex-wrap items-baseline gap-3">
+                <span className="text-2xl font-semibold tabular-nums text-amber-300">
+                  {liveMarkPrice !== null ? liveMarkPrice.toFixed(4) : "—"}
+                </span>
+                <span className="text-sm text-slate-400">
+                  Mark · <span className="text-slate-200">{symbolNormal(symbol)}</span>
+                </span>
+                {liveIndexPrice !== null ? (
+                  <span className="text-xs text-slate-500">
+                    Index <span className="tabular-nums text-slate-400">{liveIndexPrice.toFixed(4)}</span>
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex flex-col items-start gap-1 text-xs sm:items-end">
+              <span className="inline-flex items-center gap-2">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    markWsStatus === "open"
+                      ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
+                      : markWsStatus === "connecting" || markWsStatus === "reconnecting"
+                        ? "animate-pulse bg-amber-400"
+                        : "bg-slate-600"
+                  }`}
+                  aria-hidden
+                />
+                <span className="text-slate-400">
+                  {markWsStatus === "open"
+                    ? "Streaming @1s"
+                    : markWsStatus === "connecting"
+                      ? "Connecting…"
+                      : markWsStatus === "reconnecting"
+                        ? "Reconnecting…"
+                        : "Idle"}
+                </span>
+              </span>
+              {markWsEventTime ? (
+                <span className="text-[11px] text-slate-600">
+                  Last push {new Date(markWsEventTime).toLocaleTimeString()}
+                </span>
+              ) : null}
+              {markWsError ? <span className="text-[11px] text-rose-400">{markWsError}</span> : null}
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-600">
+            Direct <code className="rounded bg-slate-900/80 px-1 py-0.5 text-slate-400">{symbolNormal(symbol).toLowerCase()}@markPrice@1s</code> — no API key.
+            Yellow line on the chart is live mark when connected.
+          </p>
+        </div>
+
         <div className="mt-5">
-          <MarkPriceCandleChart candles={candles} height={380} />
+          <MarkPriceCandleChart candles={candles} liveMarkPrice={liveMarkPrice} height={380} />
         </div>
 
         {candles && candleTotalRows > 0 ? (
@@ -1079,7 +1142,12 @@ export const FuturesDashboardPage = () => {
               ) : null}
             </div>
             <p className="mt-3 text-xs text-slate-400">
-              Latest close: {lastPrice !== null ? lastPrice.toFixed(4) : "-"}
+              Latest candle close: {lastPrice !== null ? lastPrice.toFixed(4) : "-"}
+              {liveMarkPrice !== null ? (
+                <span className="ml-2">
+                  · Live mark: <span className="tabular-nums text-amber-200/90">{liveMarkPrice.toFixed(4)}</span>
+                </span>
+              ) : null}
               {!candlesExpanded && candleTotalRows > CANDLE_TABLE_PREVIEW
                 ? ` · Showing ${CANDLE_TABLE_PREVIEW} of ${candleTotalRows}`
                 : null}

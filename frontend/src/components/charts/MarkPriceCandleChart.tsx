@@ -4,6 +4,7 @@ import {
   CrosshairMode,
   createChart,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type UTCTimestamp
 } from "lightweight-charts";
@@ -41,13 +42,18 @@ function toChartData(c: MarkCandlesShape) {
 
 type Props = {
   candles: MarkCandlesShape | null;
+  /** Live mark price from WebSocket — drawn as a horizontal price line on the series. */
+  liveMarkPrice?: number | null;
   height?: number;
 };
 
-export const MarkPriceCandleChart = ({ candles, height = 360 }: Props) => {
+const LIVE_MARK_LINE = "#F0B90B";
+
+export const MarkPriceCandleChart = ({ candles, liveMarkPrice = null, height = 360 }: Props) => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const liveLineRef = useRef<IPriceLine | null>(null);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -104,6 +110,7 @@ export const MarkPriceCandleChart = ({ candles, height = 360 }: Props) => {
 
     return () => {
       ro.disconnect();
+      liveLineRef.current = null;
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -124,6 +131,32 @@ export const MarkPriceCandleChart = ({ candles, height = 360 }: Props) => {
     series.setData(data);
     chart.timeScale().fitContent();
   }, [candles]);
+
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+
+    if (liveMarkPrice === null || liveMarkPrice === undefined || !Number.isFinite(liveMarkPrice)) {
+      if (liveLineRef.current) {
+        series.removePriceLine(liveLineRef.current);
+        liveLineRef.current = null;
+      }
+      return;
+    }
+
+    if (!liveLineRef.current) {
+      liveLineRef.current = series.createPriceLine({
+        price: liveMarkPrice,
+        color: LIVE_MARK_LINE,
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: "Live mark"
+      });
+    } else {
+      liveLineRef.current.applyOptions({ price: liveMarkPrice });
+    }
+  }, [liveMarkPrice]);
 
   return (
     <div
