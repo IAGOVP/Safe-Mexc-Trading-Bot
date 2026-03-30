@@ -2,19 +2,64 @@ import crypto from "crypto";
 
 const FAPI_BASE = process.env.BINANCE_FAPI_BASE_URL ?? "https://fapi.binance.com";
 const SAPI_BASE = process.env.BINANCE_SAPI_BASE_URL ?? "https://api.binance.com";
-const DEFAULT_RECV_WINDOW = 5000;
+const DEFAULT_RECV_WINDOW = 10000;
 
-export const getBinanceCredentials = (): { apiKey: string; secret: string } => {
+let serverTimeOffsetMs = 0;
+let lastServerTimeSync = 0;
+const SERVER_TIME_TTL_MS = 60_000;
+
+type BinanceSignatureType = "HMAC" | "ED25519";
+
+type BinanceCredentials = {
+  apiKey: string;
+  signatureType: BinanceSignatureType;
+  secret?: string;
+  privateKey?: string;
+};
+
+const parseSignatureType = (): BinanceSignatureType => {
+  const raw = (process.env.BINANCE_SIGNATURE_TYPE ?? "HMAC").trim().toUpperCase();
+  return raw === "ED25519" ? "ED25519" : "HMAC";
+};
+
+const normalizePem = (raw: string): string => raw.replace(/\\n/g, "\n").trim();
+
+export const getBinanceCredentials = (): BinanceCredentials => {
   const apiKey = process.env.BINANCE_API_KEY?.trim();
-  const secret = process.env.BINANCE_API_SECRET?.trim();
-  if (!apiKey || !secret) {
-    throw new Error("BINANCE_API_KEY and BINANCE_API_SECRET must be set in the server environment (.env).");
+  const signatureType = parseSignatureType();
+  if (!apiKey) {
+    throw new Error("BINANCE_API_KEY must be set in the server environment (.env).");
   }
-  return { apiKey, secret };
+
+  if (signatureType === "ED25519") {
+    const privateKeyRaw = process.env.BINANCE_PRIVATE_KEY?.trim() || process.env.BINANCE_API_SECRET?.trim();
+    if (!privateKeyRaw) {
+      throw new Error("For ED25519, set BINANCE_PRIVATE_KEY (PEM) or BINANCE_API_SECRET in .env.");
+    }
+    return { apiKey, signatureType, privateKey: normalizePem(privateKeyRaw) };
+  }
+
+  const secret = process.env.BINANCE_API_SECRET?.trim();
+  if (!secret) {
+    throw new Error("For HMAC, BINANCE_API_SECRET must be set in the server environment (.env).");
+  }
+  return { apiKey, signatureType, secret };
 };
 
 const hmacSha256Hex = (secret: string, payload: string): string => {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
+};
+
+const ed25519SignBase64 = (privateKey: string, payload: string): string => {
+  const signature = crypto.sign(null, Buffer.from(payload), privateKey);
+  return signature.toString("base64");
+};
+
+const signPayload = (credentials: BinanceCredentials, payload: string): string => {
+  if (credentials.signatureType === "ED25519") {
+    return ed25519SignBase64(credentials.privateKey as string, payload);
+  }
+  return hmacSha256Hex(credentials.secret as string, payload);
 };
 
 const buildSortedQuery = (params: Record<string, string | number | boolean | undefined>): string => {
@@ -54,6 +99,33 @@ const parseBinanceResponse = async <T>(response: Response, context: string): Pro
   return parsed as T;
 };
 
+const getServerTimestamp = async (): Promise<number> => {
+  const now = Date.now();
+  if (lastServerTimeSync && now - lastServerTimeSync <= SERVER_TIME_TTL_MS) {
+    const ts = Math.floor(now + serverTimeOffsetMs);
+    return Number.isFinite(ts) ? ts : now;
+  }
+
+  // Compute offset using round-trip/2 to reduce impact of network latency.
+  const t0 = Date.now();
+  const res = await fetch(`${FAPI_BASE}/fapi/v1/time`, { headers: { Accept: "application/json" } });
+  const body = (await res.json()) as { serverTime?: number };
+  const t1 = Date.now();
+
+  if (typeof body.serverTime === "number") {
+    const mid = (t0 + t1) / 2;
+    serverTimeOffsetMs = body.serverTime - mid;
+    lastServerTimeSync = t1;
+  } else {
+    serverTimeOffsetMs = 0;
+    lastServerTimeSync = t1;
+  }
+
+  // Binance requires integer millisecond timestamps.
+  const ts = Math.floor(Date.now() + serverTimeOffsetMs);
+  return Number.isFinite(ts) ? ts : Date.now();
+};
+
 export const fapiPublicGet = async <T>(path: string, query: Record<string, string | number | undefined> = {}): Promise<T> => {
   const qs = buildSortedQuery(query as Record<string, string | number | boolean | undefined>);
   const url = qs ? `${FAPI_BASE}${path}?${qs}` : `${FAPI_BASE}${path}`;
@@ -62,11 +134,12 @@ export const fapiPublicGet = async <T>(path: string, query: Record<string, strin
 };
 
 export const fapiSignedGet = async <T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> => {
-  const { apiKey, secret } = getBinanceCredentials();
-  const timestamp = Date.now();
+  const credentials = getBinanceCredentials();
+  const { apiKey } = credentials;
+  const timestamp = await getServerTimestamp();
   const merged = { ...params, timestamp, recvWindow: DEFAULT_RECV_WINDOW };
   const qsBase = buildSortedQuery(merged);
-  const signature = hmacSha256Hex(secret, qsBase);
+  const signature = encodeURIComponent(signPayload(credentials, qsBase));
   const qs = `${qsBase}&signature=${signature}`;
   const url = `${FAPI_BASE}${path}?${qs}`;
   const response = await fetch(url, {
@@ -77,11 +150,12 @@ export const fapiSignedGet = async <T>(path: string, params: Record<string, stri
 };
 
 export const fapiSignedPost = async <T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> => {
-  const { apiKey, secret } = getBinanceCredentials();
-  const timestamp = Date.now();
+  const credentials = getBinanceCredentials();
+  const { apiKey } = credentials;
+  const timestamp = await getServerTimestamp();
   const merged = { ...params, timestamp, recvWindow: DEFAULT_RECV_WINDOW };
   const qsBase = buildSortedQuery(merged);
-  const signature = hmacSha256Hex(secret, qsBase);
+  const signature = encodeURIComponent(signPayload(credentials, qsBase));
   const body = `${qsBase}&signature=${signature}`;
   const response = await fetch(`${FAPI_BASE}${path}`, {
     method: "POST",
@@ -96,11 +170,12 @@ export const fapiSignedPost = async <T>(path: string, params: Record<string, str
 };
 
 export const fapiSignedDelete = async <T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> => {
-  const { apiKey, secret } = getBinanceCredentials();
-  const timestamp = Date.now();
+  const credentials = getBinanceCredentials();
+  const { apiKey } = credentials;
+  const timestamp = await getServerTimestamp();
   const merged = { ...params, timestamp, recvWindow: DEFAULT_RECV_WINDOW };
   const qsBase = buildSortedQuery(merged);
-  const signature = hmacSha256Hex(secret, qsBase);
+  const signature = encodeURIComponent(signPayload(credentials, qsBase));
   const qs = `${qsBase}&signature=${signature}`;
   const url = `${FAPI_BASE}${path}?${qs}`;
   const response = await fetch(url, {
@@ -112,11 +187,12 @@ export const fapiSignedDelete = async <T>(path: string, params: Record<string, s
 
 /** USDⓈ-M algo orders (SAPI). See https://developers.binance.com/docs/algo/future-algo */
 export const sapiSignedPost = async <T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> => {
-  const { apiKey, secret } = getBinanceCredentials();
-  const timestamp = Date.now();
+  const credentials = getBinanceCredentials();
+  const { apiKey } = credentials;
+  const timestamp = await getServerTimestamp();
   const merged = { ...params, timestamp, recvWindow: DEFAULT_RECV_WINDOW };
   const qsBase = buildSortedQuery(merged);
-  const signature = hmacSha256Hex(secret, qsBase);
+  const signature = encodeURIComponent(signPayload(credentials, qsBase));
   const body = `${qsBase}&signature=${signature}`;
   const response = await fetch(`${SAPI_BASE}${path}`, {
     method: "POST",
