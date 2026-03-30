@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
   fetchAccountAssets,
@@ -18,6 +18,7 @@ type TicketOrderMode = "regular" | "trigger";
 const SUPPORTED_SYMBOLS: SupportedSymbol[] = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 const ASSET_FOCUS_OPTIONS = ["BTC", "ETH", "SOL", "TAO"] as const;
 const CANDLE_TABLE_PREVIEW = 10;
+const CANDLE_SCROLL_CHUNK = 30;
 
 const REGULAR_ORDER_TYPES = [
   { value: 1, label: "Limit" },
@@ -71,7 +72,10 @@ export const FuturesDashboardPage = () => {
   const [positionsError, setPositionsError] = useState("");
   const [showAllAssetsDialog, setShowAllAssetsDialog] = useState(false);
   const [assetSearch, setAssetSearch] = useState("");
-  const [showAllCandles, setShowAllCandles] = useState(false);
+  const [candlesExpanded, setCandlesExpanded] = useState(false);
+  const [candlesVisibleRows, setCandlesVisibleRows] = useState(CANDLE_TABLE_PREVIEW);
+  const candleScrollRef = useRef<HTMLDivElement>(null);
+  const candleSentinelRef = useRef<HTMLDivElement>(null);
 
   const [assets, setAssets] = useState<Array<{ currency: string; availableBalance: number; equity: number; unrealized: number }> | null>(null);
   const [positions, setPositions] = useState<Array<{ positionId: string; symbol: string; positionType: number; holdVol: number; holdAvgPrice: number; realised: number; leverage: number }> | null>(
@@ -330,8 +334,38 @@ export const FuturesDashboardPage = () => {
   }, [candles]);
 
   useEffect(() => {
-    setShowAllCandles(false);
+    setCandlesExpanded(false);
+    setCandlesVisibleRows(CANDLE_TABLE_PREVIEW);
   }, [candles]);
+
+  const candleTotalRows = candlesSortedDesc.length;
+
+  const loadMoreCandleRows = useCallback(() => {
+    setCandlesVisibleRows((n) => Math.min(candleTotalRows, n + CANDLE_SCROLL_CHUNK));
+  }, [candleTotalRows]);
+
+  useEffect(() => {
+    if (!candlesExpanded || candleTotalRows === 0) return;
+    const root = candleScrollRef.current;
+    const target = candleSentinelRef.current;
+    if (!root || !target || candlesVisibleRows >= candleTotalRows) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (hit) loadMoreCandleRows();
+      },
+      { root, rootMargin: "120px", threshold: 0 }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [candlesExpanded, candlesVisibleRows, candleTotalRows, loadMoreCandleRows]);
+
+  const candleRowsToShow = useMemo(() => {
+    const cap = candlesExpanded ? candlesVisibleRows : CANDLE_TABLE_PREVIEW;
+    return candlesSortedDesc.slice(0, Math.min(cap, candleTotalRows));
+  }, [candlesExpanded, candlesSortedDesc, candlesVisibleRows, candleTotalRows]);
 
   if (!currentAccount) {
     return (
@@ -972,48 +1006,85 @@ export const FuturesDashboardPage = () => {
           <MarkPriceCandleChart candles={candles} height={380} />
         </div>
 
-        {candles && candlesSortedDesc.length > 0 ? (
-          <div className="mt-5 overflow-auto">
+        {candles && candleTotalRows > 0 ? (
+          <div className="mt-5">
             <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-slate-400">Latest candles first (newest at top).</p>
-              {candlesSortedDesc.length > CANDLE_TABLE_PREVIEW ? (
+              <p className="text-xs text-slate-400">
+                {candlesExpanded
+                  ? "Scroll the list to load more rows automatically."
+                  : "Latest candles first (newest at top)."}
+              </p>
+              {candleTotalRows > CANDLE_TABLE_PREVIEW ? (
                 <button
                   type="button"
                   className="ghost-btn self-start rounded-lg px-3 py-1.5 text-xs text-slate-100 sm:self-auto"
-                  onClick={() => setShowAllCandles((v) => !v)}
+                  onClick={() => {
+                    if (candlesExpanded) {
+                      setCandlesExpanded(false);
+                      setCandlesVisibleRows(CANDLE_TABLE_PREVIEW);
+                    } else {
+                      setCandlesExpanded(true);
+                      setCandlesVisibleRows((prev) =>
+                        Math.min(candleTotalRows, Math.max(prev + CANDLE_SCROLL_CHUNK, CANDLE_TABLE_PREVIEW + CANDLE_SCROLL_CHUNK))
+                      );
+                    }
+                  }}
                 >
-                  {showAllCandles ? "Show less" : "View all"}
+                  {candlesExpanded ? "Show less" : "View all"}
                 </button>
               ) : null}
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-400">
-                  <th className="py-2 pr-3">Time</th>
-                  <th className="py-2 pr-3">Open</th>
-                  <th className="py-2 pr-3">High</th>
-                  <th className="py-2 pr-3">Low</th>
-                  <th className="py-2 pr-3">Close</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(showAllCandles ? candlesSortedDesc : candlesSortedDesc.slice(0, CANDLE_TABLE_PREVIEW)).map((row, idx) => (
-                  <tr key={`${row.time}-${idx}`} className="border-t border-sky-500/10 text-slate-200">
-                    <td className="py-2 pr-3 text-xs text-slate-300">
-                      {new Date(row.time * 1000).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}
-                    </td>
-                    <td className="py-2 pr-3">{row.open.toFixed(2)}</td>
-                    <td className="py-2 pr-3">{row.high.toFixed(2)}</td>
-                    <td className="py-2 pr-3">{row.low.toFixed(2)}</td>
-                    <td className="py-2 pr-3">{row.close.toFixed(2)}</td>
+            <div
+              ref={candleScrollRef}
+              className={
+                candlesExpanded
+                  ? "smart-scroll max-h-[min(55vh,520px)] overflow-y-auto rounded-lg border border-sky-500/15 bg-slate-950/20"
+                  : "overflow-x-auto"
+              }
+            >
+              <table className="w-full text-sm">
+                <thead
+                  className={
+                    candlesExpanded
+                      ? "sticky top-0 z-[1] border-b border-sky-500/20 bg-[rgba(8,16,35,0.92)] backdrop-blur-sm"
+                      : ""
+                  }
+                >
+                  <tr className="text-left text-slate-400">
+                    <th className="py-2 pr-3">Time</th>
+                    <th className="py-2 pr-3">Open</th>
+                    <th className="py-2 pr-3">High</th>
+                    <th className="py-2 pr-3">Low</th>
+                    <th className="py-2 pr-3">Close</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {candleRowsToShow.map((row, idx) => (
+                    <tr key={`${row.time}-${idx}`} className="border-t border-sky-500/10 text-slate-200">
+                      <td className="py-2 pr-3 text-xs text-slate-300">
+                        {new Date(row.time * 1000).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}
+                      </td>
+                      <td className="py-2 pr-3">{row.open.toFixed(2)}</td>
+                      <td className="py-2 pr-3">{row.high.toFixed(2)}</td>
+                      <td className="py-2 pr-3">{row.low.toFixed(2)}</td>
+                      <td className="py-2 pr-3">{row.close.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {candlesExpanded && candlesVisibleRows < candleTotalRows ? (
+                <div ref={candleSentinelRef} className="flex min-h-[1px] justify-center py-3" aria-hidden>
+                  <span className="text-[11px] text-slate-500">Loading more as you scroll…</span>
+                </div>
+              ) : null}
+            </div>
             <p className="mt-3 text-xs text-slate-400">
               Latest close: {lastPrice !== null ? lastPrice.toFixed(4) : "-"}
-              {!showAllCandles && candlesSortedDesc.length > CANDLE_TABLE_PREVIEW
-                ? ` · Showing ${CANDLE_TABLE_PREVIEW} of ${candlesSortedDesc.length}`
+              {!candlesExpanded && candleTotalRows > CANDLE_TABLE_PREVIEW
+                ? ` · Showing ${CANDLE_TABLE_PREVIEW} of ${candleTotalRows}`
+                : null}
+              {candlesExpanded
+                ? ` · Showing ${candleRowsToShow.length} of ${candleTotalRows}${candlesVisibleRows < candleTotalRows ? " (scroll for more)" : " (all loaded)"}`
                 : null}
             </p>
           </div>
