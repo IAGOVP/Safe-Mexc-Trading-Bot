@@ -6,8 +6,9 @@ import { useAuth } from "./context/AuthContext";
 import { HomePage } from "./pages/HomePage";
 import { FuturesDashboardPage } from "./pages/FuturesDashboardPage";
 import { AccountSettingsPage } from "./pages/AccountSettingsPage";
+import { StepTradingPage } from "./pages/StepTradingPage";
 
-type SignedInView = "dashboard" | "settings";
+type SignedInView = "dashboard" | "settings" | "steps";
 
 function App() {
   const { currentAccount } = useAuth();
@@ -28,9 +29,20 @@ function App() {
         onSignUpClick={() => setShowSignUp(true)}
         onSettingsClick={() => setSignedInView("settings")}
         onDashboardClick={() => setSignedInView("dashboard")}
+        onStepTradingClick={() => setSignedInView("steps")}
       />
 
-      {currentAccount ? (signedInView === "settings" ? <AccountSettingsPage /> : <FuturesDashboardPage />) : <HomePage />}
+      {currentAccount ? (
+        signedInView === "settings" ? (
+          <AccountSettingsPage />
+        ) : signedInView === "steps" ? (
+          <StepTradingPage />
+        ) : (
+          <FuturesDashboardPage />
+        )
+      ) : (
+        <HomePage />
+      )}
 
       {showSignUp ? <SignUpDialog onClose={() => setShowSignUp(false)} /> : null}
       {showSignIn ? <SignInDialog onClose={() => setShowSignIn(false)} /> : null}

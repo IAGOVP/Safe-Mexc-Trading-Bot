@@ -10,6 +10,7 @@ import {
   submitOrder,
   submitTriggerOrder
 } from "../controllers/binance.controller";
+import { getStepPlan, getStepPlans, postStartStepPlan, postStopStepPlan } from "../controllers/stepPlan.controller";
 
 const binanceRouter = Router();
 
@@ -23,5 +24,10 @@ binanceRouter.post("/order/submit", submitOrder);
 binanceRouter.post("/order/submit-trigger", submitTriggerOrder);
 binanceRouter.post("/algo/vp-order", submitAlgoVpOrder);
 binanceRouter.post("/order/cancel", cancelOrders);
+
+binanceRouter.post("/steps/start", postStartStepPlan);
+binanceRouter.get("/steps/plans", getStepPlans);
+binanceRouter.get("/steps/plans/:id", getStepPlan);
+binanceRouter.post("/steps/plans/:id/stop", postStopStepPlan);
 
 export default binanceRouter;

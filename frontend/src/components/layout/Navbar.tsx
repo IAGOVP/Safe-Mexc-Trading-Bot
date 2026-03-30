@@ -6,9 +6,16 @@ interface NavbarProps {
   onSignUpClick: () => void;
   onSettingsClick: () => void;
   onDashboardClick: () => void;
+  onStepTradingClick: () => void;
 }
 
-export const Navbar = ({ onSignInClick, onSignUpClick, onSettingsClick, onDashboardClick }: NavbarProps) => {
+export const Navbar = ({
+  onSignInClick,
+  onSignUpClick,
+  onSettingsClick,
+  onDashboardClick,
+  onStepTradingClick
+}: NavbarProps) => {
   const { currentAccount, signOut } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -55,6 +62,15 @@ export const Navbar = ({ onSignInClick, onSignUpClick, onSettingsClick, onDashbo
                   }}
                 >
                   Dashboard
+                </button>
+                <button
+                  className="w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
+                  onClick={() => {
+                    onStepTradingClick();
+                    setIsMenuOpen(false);
+                  }}
+                >
+                  Step trading
                 </button>
                 <button
                   className="w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
