@@ -16,7 +16,7 @@ export const Navbar = ({ onSignInClick, onSignUpClick, onSettingsClick, onDashbo
     <nav className="sticky top-0 z-10 border-b border-sky-500/20 bg-slate-950/65 backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
         <h1 className="bg-gradient-to-r from-sky-300 to-blue-400 bg-clip-text text-lg font-semibold text-transparent">
-          Safe MEXC Trading Bot
+          Safe Binance Futures Bot
         </h1>
 
         {!currentAccount ? (

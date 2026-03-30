@@ -1,11 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { fetchAccountAssets, fetchIndexPriceCandles, fetchOpenOrders, fetchOpenPositions, submitOrder, submitTriggerOrder, cancelOrders } from "../api/mexcApi";
+import {
+  fetchAccountAssets,
+  fetchBookTicker,
+  fetchMarkPriceCandles,
+  fetchOpenOrders,
+  fetchOpenPositions,
+  submitOrder,
+  submitTriggerOrder,
+  cancelOrders
+} from "../api/binanceApi";
 
 type TradeAction = "open_long" | "open_short" | "close_long" | "close_short";
-type SupportedSymbol = "BTC_USDT" | "ETH_USDT" | "SOL_USDT";
+type SupportedSymbol = "BTCUSDT" | "ETHUSDT" | "SOLUSDT";
 type TicketOrderMode = "regular" | "trigger";
-const SUPPORTED_SYMBOLS: SupportedSymbol[] = ["BTC_USDT", "ETH_USDT", "SOL_USDT"];
+const SUPPORTED_SYMBOLS: SupportedSymbol[] = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 const ASSET_FOCUS_OPTIONS = ["BTC", "ETH", "SOL", "TAO"] as const;
 const REGULAR_ORDER_TYPES = [
   { value: 1, label: "Limit" },
@@ -17,8 +26,8 @@ const REGULAR_ORDER_TYPES = [
 ] as const;
 
 const symbolNormal = (s: string): SupportedSymbol => {
-  const normalized = s.trim().toUpperCase().replace("/", "_");
-  return SUPPORTED_SYMBOLS.includes(normalized as SupportedSymbol) ? (normalized as SupportedSymbol) : "BTC_USDT";
+  const normalized = s.trim().toUpperCase().replace(/[_\-/]/g, "");
+  return SUPPORTED_SYMBOLS.includes(normalized as SupportedSymbol) ? (normalized as SupportedSymbol) : "BTCUSDT";
 };
 
 const actionToSide = (action: TradeAction): number => {
@@ -38,9 +47,8 @@ const actionToSide = (action: TradeAction): number => {
 
 export const FuturesDashboardPage = () => {
   const { currentAccount } = useAuth();
-  const email = currentAccount?.email ?? "";
 
-  const [symbol, setSymbol] = useState<SupportedSymbol>("BTC_USDT");
+  const [symbol, setSymbol] = useState<SupportedSymbol>("BTCUSDT");
   const [interval, setInterval] = useState("Min15");
 
   const [candlesLoading, setCandlesLoading] = useState(false);
@@ -52,6 +60,7 @@ export const FuturesDashboardPage = () => {
     high: number[];
     low: number[];
   } | null>(null);
+  const [bestBidAsk, setBestBidAsk] = useState<{ bid1: number | null; ask1: number | null }>({ bid1: null, ask1: null });
 
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [positionsLoading, setPositionsLoading] = useState(false);
@@ -75,6 +84,7 @@ export const FuturesDashboardPage = () => {
   const [leverage, setLeverage] = useState(5);
   const [vol, setVol] = useState<number>(1);
   const [priceOverride, setPriceOverride] = useState<string>("");
+  const [chasePriceOverride, setChasePriceOverride] = useState<string>("");
   const [triggerPriceOverride, setTriggerPriceOverride] = useState<string>("");
   const [triggerType, setTriggerType] = useState<1 | 2>(1);
   const [trend, setTrend] = useState<1 | 2 | 3>(1);
@@ -106,13 +116,27 @@ export const FuturesDashboardPage = () => {
     const num = Number(trimmed);
     return Number.isFinite(num) ? num : lastPrice ?? 0;
   }, [lastPrice, triggerPriceOverride]);
+  const effectiveChasePrice = useMemo(() => {
+    const isBuyAction = orderAction === "open_long" || orderAction === "close_short";
+    const reference = isBuyAction ? bestBidAsk.ask1 : bestBidAsk.bid1;
+    const distance = Number(chasePriceOverride.trim());
+    if (reference === null || reference === undefined) return lastPrice ?? 0;
+    if (!Number.isFinite(distance)) return reference;
+    return reference + distance;
+  }, [bestBidAsk.ask1, bestBidAsk.bid1, chasePriceOverride, lastPrice, orderAction]);
+  const effectiveMarketPrice = useMemo(() => {
+    const isBuyAction = orderAction === "open_long" || orderAction === "close_short";
+    const reference = isBuyAction ? bestBidAsk.ask1 : bestBidAsk.bid1;
+    if (reference !== null && reference !== undefined) return reference;
+    return effectivePrice;
+  }, [bestBidAsk.ask1, bestBidAsk.bid1, effectivePrice, orderAction]);
 
   const loadCandles = async () => {
     if (!symbol) return;
     setCandlesLoading(true);
     setCandlesError("");
     try {
-      const res = await fetchIndexPriceCandles({ symbol: symbolNormal(symbol), interval });
+      const res = await fetchMarkPriceCandles({ symbol: symbolNormal(symbol), interval });
       setCandles(res.data);
     } catch (err) {
       setCandlesError(err instanceof Error ? err.message : "Failed to load candles.");
@@ -126,9 +150,9 @@ export const FuturesDashboardPage = () => {
     setAssetsLoading(true);
     setAssetsError("");
     try {
-      const res = await fetchAccountAssets(email);
+      const res = await fetchAccountAssets();
       if (!Array.isArray(res.data)) {
-        throw new Error("Unexpected MEXC account assets response.");
+        throw new Error("Unexpected Binance account assets response.");
       }
       setAssets(
         res.data.map((a) => ({
@@ -150,9 +174,9 @@ export const FuturesDashboardPage = () => {
     setPositionsLoading(true);
     setPositionsError("");
     try {
-      const res = await fetchOpenPositions({ email, symbol: symbolNormal(symbol) });
+      const res = await fetchOpenPositions({ symbol: symbolNormal(symbol) });
       if (!Array.isArray(res.data)) {
-        throw new Error("Unexpected MEXC open positions response.");
+        throw new Error("Unexpected Binance open positions response.");
       }
       setPositions(
         res.data.map((p) => ({
@@ -177,13 +201,9 @@ export const FuturesDashboardPage = () => {
     setOrdersLoading(true);
     setOrdersError("");
     try {
-      const res = await fetchOpenOrders({ email, symbol: symbolNormal(symbol), pageNum: 1, pageSize: 20 });
-      const rawList = Array.isArray(res.data)
-        ? res.data
-        : res.data && typeof res.data === "object" && Array.isArray(res.data.resultList)
-          ? res.data.resultList
-          : null;
-      if (!rawList) throw new Error("Unexpected MEXC open orders response.");
+      const res = await fetchOpenOrders({ symbol: symbolNormal(symbol) });
+      const rawList = Array.isArray(res.data) ? res.data : null;
+      if (!rawList) throw new Error("Unexpected Binance open orders response.");
       setOpenOrders(
         rawList.map((o) => ({
           orderId: String(o.orderId),
@@ -202,9 +222,26 @@ export const FuturesDashboardPage = () => {
     }
   };
 
+  const loadTicker = async () => {
+    try {
+      const res = await fetchBookTicker(symbolNormal(symbol));
+      if (!Array.isArray(res.data)) return;
+      const current = res.data.find((item) => item.symbol === symbolNormal(symbol));
+      if (!current) return;
+      setBestBidAsk({
+        bid1: typeof current.bid1 === "number" ? current.bid1 : null,
+        ask1: typeof current.ask1 === "number" ? current.ask1 : null
+      });
+    } catch {
+      setBestBidAsk({ bid1: null, ask1: null });
+    }
+  };
+
   useEffect(() => {
     if (!currentAccount) return;
     loadCandles();
+    loadTicker();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAccount, symbol, interval]);
 
   useEffect(() => {
@@ -218,11 +255,38 @@ export const FuturesDashboardPage = () => {
   useEffect(() => {
     if (!currentAccount) return;
     loadOpenOrders();
+    loadTicker();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
   const isOpening = orderAction === "open_long" || orderAction === "open_short";
   const side = actionToSide(orderAction);
+  const isRegularMode = ticketOrderMode === "regular";
+  const isMarketOrder = orderType === 5;
+  const isChaseOrder = orderType === 6;
+  const showRegularPriceField = isRegularMode && !isMarketOrder && !isChaseOrder;
+  const showChasePriceField = isRegularMode && isChaseOrder;
+  const chaseReferenceLabel = side === 1 || side === 2 ? "Ask1" : "Bid1";
+  const chaseReferencePrice = side === 1 || side === 2 ? bestBidAsk.ask1 : bestBidAsk.bid1;
+  const orderTypeLabel = REGULAR_ORDER_TYPES.find((v) => v.value === orderType)?.label ?? `Type ${orderType}`;
+  const orderTypeHint = useMemo(() => {
+    switch (orderType) {
+      case 1:
+        return "Limit: set exact limit price.";
+      case 2:
+        return "Post Only: maker-only, should not execute immediately.";
+      case 3:
+        return "IOC: execute immediately, cancel unfilled part.";
+      case 4:
+        return "FOK: fully fill immediately or cancel all.";
+      case 5:
+        return "Market: no price input required.";
+      case 6:
+        return "Chase/MTL: uses Bid1/Ask1 plus distance offset.";
+      default:
+        return "";
+    }
+  }, [orderType]);
   const focusedAssets = useMemo(() => {
     const map = new Map<string, { currency: string; availableBalance: number; equity: number; unrealized: number }>();
     for (const a of assets ?? []) {
@@ -249,7 +313,9 @@ export const FuturesDashboardPage = () => {
       <main className="mx-auto mt-14 max-w-5xl px-4">
         <section className="glass-card rounded-2xl p-8">
           <h2 className="text-xl font-semibold">Sign in to trade</h2>
-          <p className="mt-2 text-slate-300">After signing in, open Settings from the navbar menu and add your MEXC API keys.</p>
+          <p className="mt-2 text-slate-300">
+            After signing in, ensure the backend has BINANCE_API_KEY and BINANCE_API_SECRET in its .env (USDⓈ-M futures enabled).
+          </p>
         </section>
       </main>
     );
@@ -261,8 +327,8 @@ export const FuturesDashboardPage = () => {
         <div className="glass-card rounded-2xl p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300/90">Index Price Candles</p>
-              <h3 className="mt-1 text-lg font-semibold">Index Kline</h3>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300/90">Mark Price Candles</p>
+              <h3 className="mt-1 text-lg font-semibold">USDⓈ-M Mark Kline</h3>
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -480,9 +546,9 @@ export const FuturesDashboardPage = () => {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300/90">Order Ticket</p>
-            <h3 className="mt-1 text-lg font-semibold">Futures Order Ticket</h3>
+            <h3 className="mt-1 text-lg font-semibold">Binance USDⓈ-M Order Ticket</h3>
           </div>
-          <p className="text-sm text-slate-400">Uses last index candle close as default price for price and trigger fields.</p>
+          <p className="text-sm text-slate-400">Uses last mark candle close as default price. Quantity follows Binance rules per symbol.</p>
         </div>
         <p className="mt-3 text-sm text-slate-300">
           Total available futures balance: <span className="font-semibold text-slate-100">{totalAvailableFuturesBalance.toFixed(6)}</span>
@@ -510,6 +576,7 @@ export const FuturesDashboardPage = () => {
                 </option>
               ))}
             </select>
+            <p className="mt-1 text-xs text-slate-400">{orderTypeHint}</p>
           </div>
 
           <div>
@@ -531,7 +598,7 @@ export const FuturesDashboardPage = () => {
           </div>
 
           <div>
-            <label className="text-xs text-slate-300">Quantity (vol)</label>
+            <label className="text-xs text-slate-300">Quantity (Binance base / step)</label>
             <div className="mt-1 flex items-center gap-2">
               <button
                 className="ghost-btn inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-100"
@@ -592,17 +659,41 @@ export const FuturesDashboardPage = () => {
             </div>
           )}
 
-          <div className="md:col-span-2">
-            <label className="text-xs text-slate-300">Price</label>
-            <input
-              className="input-theme mt-1 w-full rounded-lg px-3 py-2"
-              type="text"
-              placeholder={lastPrice !== null ? `Auto: ${lastPrice.toFixed(4)}` : "Auto price"}
-              value={priceOverride}
-              onChange={(e) => setPriceOverride(e.target.value)}
-            />
-            <p className="mt-1 text-xs text-slate-400">Effective price: {effectivePrice.toFixed(4)}</p>
-          </div>
+          {showRegularPriceField ? (
+            <div className="md:col-span-2">
+              <label className="text-xs text-slate-300">Price</label>
+              <input
+                className="input-theme mt-1 w-full rounded-lg px-3 py-2"
+                type="text"
+                placeholder={lastPrice !== null ? `Auto: ${lastPrice.toFixed(4)}` : "Auto price"}
+                value={priceOverride}
+                onChange={(e) => setPriceOverride(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-slate-400">Effective price: {effectivePrice.toFixed(4)}</p>
+            </div>
+          ) : null}
+
+          {showChasePriceField ? (
+            <div className="md:col-span-2">
+              <label className="text-xs text-slate-300">Distance From {chaseReferenceLabel}</label>
+              <input
+                className="input-theme mt-1 w-full rounded-lg px-3 py-2"
+                type="text"
+                placeholder="e.g. 0.5 or -0.5"
+                value={chasePriceOverride}
+                onChange={(e) => setChasePriceOverride(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                {chaseReferenceLabel}: {chaseReferencePrice !== null ? chaseReferencePrice.toFixed(4) : "-"} | Effective chase price: {effectiveChasePrice.toFixed(4)}
+              </p>
+            </div>
+          ) : null}
+
+          {isRegularMode && isMarketOrder ? (
+            <div className="md:col-span-2 rounded-lg border border-sky-500/10 bg-slate-950/30 px-3 py-2 text-xs text-slate-400">
+              Market order selected: execution price is determined by market depth.
+            </div>
+          ) : null}
 
           {ticketOrderMode === "trigger" ? (
             <>
@@ -655,11 +746,26 @@ export const FuturesDashboardPage = () => {
                   setOrderError("");
                   setOrderResult("");
                   try {
+                    if (!Number.isFinite(vol) || vol <= 0) {
+                      throw new Error("Invalid quantity: vol must be greater than 0.");
+                    }
+                    if (isOpening && (!Number.isFinite(leverage) || leverage < 1)) {
+                      throw new Error("Invalid leverage: opening orders require leverage >= 1.");
+                    }
+                    if (ticketOrderMode === "regular" && !isMarketOrder && !isChaseOrder && (!Number.isFinite(effectivePrice) || effectivePrice <= 0)) {
+                      throw new Error("Invalid price: please provide a positive price.");
+                    }
+                    if (ticketOrderMode === "regular" && isChaseOrder && !Number.isFinite(effectiveChasePrice)) {
+                      throw new Error("Invalid chase setup: Bid1/Ask1 reference is unavailable, please refresh and retry.");
+                    }
+                    if (ticketOrderMode === "trigger" && (!Number.isFinite(effectiveTriggerPrice) || effectiveTriggerPrice <= 0)) {
+                      throw new Error("Invalid trigger price: please provide a positive trigger price.");
+                    }
+
                     const selectedOrderType = ticketOrderMode === "trigger" ? Math.min(orderType, 5) : orderType;
                     const res =
                       ticketOrderMode === "trigger"
                         ? await submitTriggerOrder({
-                            email,
                             symbol: symbolNormal(symbol),
                             price: selectedOrderType === 5 ? undefined : effectivePrice,
                             vol,
@@ -673,9 +779,8 @@ export const FuturesDashboardPage = () => {
                             trend
                           })
                         : await submitOrder({
-                            email,
                             symbol: symbolNormal(symbol),
-                            price: effectivePrice,
+                            price: isMarketOrder ? undefined : isChaseOrder ? effectiveChasePrice : effectivePrice,
                             vol,
                             leverage: isOpening ? leverage : undefined,
                             side,
@@ -683,9 +788,9 @@ export const FuturesDashboardPage = () => {
                             openType
                           });
                     if (res.orderId) {
-                      setOrderResult(`${ticketOrderMode === "trigger" ? "Trigger" : "Order"} submitted. orderId=${res.orderId}`);
+                      setOrderResult(`${ticketOrderMode === "trigger" ? "Trigger" : orderTypeLabel} submitted. orderId=${res.orderId}`);
                     } else {
-                      setOrderResult(`${ticketOrderMode === "trigger" ? "Trigger" : "Order"} submitted.`);
+                      setOrderResult(`${ticketOrderMode === "trigger" ? "Trigger" : orderTypeLabel} submitted.`);
                     }
                     await loadPositions();
                     await loadOpenOrders();
@@ -766,7 +871,7 @@ export const FuturesDashboardPage = () => {
                   try {
                     const idNum = Number(cancelOrderId);
                     if (!Number.isFinite(idNum)) throw new Error("orderId must be a number.");
-                    await cancelOrders({ email, orderIds: [idNum] });
+                    await cancelOrders({ symbol: symbolNormal(symbol), orderIds: [idNum] });
                     setCancelResult("Cancel request sent.");
                     setCancelOrderId("");
                     await loadPositions();

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { signInRequest, signUpRequest, updateMexcKeysRequest, updatePasswordRequest } from "../api/authApi";
+import { signInRequest, signUpRequest, updatePasswordRequest } from "../api/authApi";
 import { Account } from "../types/account";
 
 interface AuthContextValue {
@@ -7,7 +7,6 @@ interface AuthContextValue {
   signUp: (payload: { email: string; password: string; confirmPassword: string }) => Promise<void>;
   signIn: (payload: { email: string; password: string }) => Promise<void>;
   signOut: () => void;
-  updateMexcKeys: (payload: { mexcAPIKey: string; mexcSecretKey: string }) => Promise<void>;
   updatePassword: (payload: {
     currentPassword: string;
     newPassword: string;
@@ -16,7 +15,7 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-const AUTH_STORAGE_KEY = "safemexc.auth.account";
+const AUTH_STORAGE_KEY = "safebinance.auth.account";
 
 const getStoredAccount = (): Account | null => {
   if (typeof window === "undefined") {
@@ -67,17 +66,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       },
       signOut: () => {
         setCurrentAccount(null);
-      },
-      updateMexcKeys: async ({ mexcAPIKey, mexcSecretKey }) => {
-        if (!currentAccount) {
-          throw new Error("No signed-in account.");
-        }
-        const updated = await updateMexcKeysRequest({
-          email: currentAccount.email,
-          mexcAPIKey,
-          mexcSecretKey
-        });
-        setCurrentAccount(updated);
       },
       updatePassword: async ({ currentPassword, newPassword, confirmNewPassword }) => {
         if (!currentAccount) {

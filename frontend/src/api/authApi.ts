@@ -42,26 +42,6 @@ export const signInRequest = async (payload: { email: string; password: string }
   return body.account;
 };
 
-export const updateMexcKeysRequest = async (payload: {
-  email: string;
-  mexcAPIKey: string;
-  mexcSecretKey: string;
-}): Promise<Account> => {
-  const response = await fetch(`${API_URL}/auth/settings/mexc-keys`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    const body = (await response.json()) as { message?: string };
-    throw new Error(body.message ?? "Failed to update MEXC keys.");
-  }
-
-  const body = (await response.json()) as AccountResponse;
-  return body.account;
-};
-
 export const updatePasswordRequest = async (payload: {
   email: string;
   currentPassword: string;

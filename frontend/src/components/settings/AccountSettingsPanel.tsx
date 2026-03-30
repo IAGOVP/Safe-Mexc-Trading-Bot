@@ -3,29 +3,13 @@ import { useAuth } from "../../context/AuthContext";
 import { PasswordStrength } from "../auth/PasswordStrength";
 
 export const AccountSettingsPanel = () => {
-  const { currentAccount, updateMexcKeys, updatePassword } = useAuth();
-  const [mexcAPIKey, setMexcAPIKey] = useState(currentAccount?.mexcAPIKey ?? "");
-  const [mexcSecretKey, setMexcSecretKey] = useState(currentAccount?.mexcSecretKey ?? "");
-  const [mexcMessage, setMexcMessage] = useState("");
-  const [mexcError, setMexcError] = useState("");
+  const { currentAccount, updatePassword } = useAuth();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
   const [passwordError, setPasswordError] = useState("");
-
-  const handleMexcSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setMexcError("");
-    setMexcMessage("");
-    try {
-      await updateMexcKeys({ mexcAPIKey, mexcSecretKey });
-      setMexcMessage("MEXC keys updated.");
-    } catch (err) {
-      setMexcError(err instanceof Error ? err.message : "Failed to save settings.");
-    }
-  };
 
   const handlePasswordSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -58,27 +42,25 @@ export const AccountSettingsPanel = () => {
         Account Settings
       </h2>
       <p className="mt-1 text-sm text-slate-300">Email: {currentAccount.email}</p>
-      <form className="mt-4 space-y-3" onSubmit={handleMexcSubmit}>
-        <input
-          className="input-theme w-full rounded-lg px-3 py-2"
-          type="text"
-          placeholder="MEXC API Key"
-          value={mexcAPIKey}
-          onChange={(e) => setMexcAPIKey(e.target.value)}
-        />
-        <input
-          className="input-theme w-full rounded-lg px-3 py-2"
-          type="password"
-          placeholder="MEXC Secret Key"
-          value={mexcSecretKey}
-          onChange={(e) => setMexcSecretKey(e.target.value)}
-        />
-        {mexcMessage ? <p className="text-sm text-emerald-400">{mexcMessage}</p> : null}
-        {mexcError ? <p className="text-sm text-rose-400">{mexcError}</p> : null}
-        <button className="neon-btn rounded-lg px-4 py-2 font-medium text-white" type="submit">
-          Save Settings
-        </button>
-      </form>
+
+      <div className="mt-6 rounded-lg border border-amber-500/20 bg-amber-950/20 px-4 py-3 text-sm text-amber-100/90">
+        <p className="font-medium text-amber-200">Binance API keys</p>
+        <p className="mt-1 text-slate-300">
+          USDⓈ-M futures trading uses <code className="text-sky-200">BINANCE_API_KEY</code> and{" "}
+          <code className="text-sky-200">BINANCE_API_SECRET</code> in the backend <code className="text-sky-200">.env</code> file (not stored in this
+          app). Enable <strong>Futures</strong> permission on the key. Optional algo (VP) orders use the same key against{" "}
+          <code className="text-sky-200">api.binance.com</code> per{" "}
+          <a
+            className="text-sky-300 underline"
+            href="https://developers.binance.com/docs/algo/future-algo"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Binance Future Algo docs
+          </a>
+          .
+        </p>
+      </div>
 
       <div className="mt-8 border-t border-sky-500/15 pt-6">
         <h3 className="text-lg font-semibold text-slate-100">Update Password</h3>

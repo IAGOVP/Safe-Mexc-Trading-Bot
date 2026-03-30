@@ -2,16 +2,9 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { Account } from "../models/Account.model";
 
-const sanitizeAccount = (account: {
-  _id: unknown;
-  email: string;
-  mexcAPIKey: string;
-  mexcSecretKey: string;
-}) => ({
+const sanitizeAccount = (account: { _id: unknown; email: string }) => ({
   id: String(account._id),
-  email: account.email,
-  mexcAPIKey: account.mexcAPIKey,
-  mexcSecretKey: account.mexcSecretKey
+  email: account.email
 });
 
 export const signUp = async (req: Request, res: Response): Promise<void> => {
@@ -40,9 +33,7 @@ export const signUp = async (req: Request, res: Response): Promise<void> => {
   const hashedPassword = await bcrypt.hash(password, 10);
   const account = await Account.create({
     email,
-    password: hashedPassword,
-    mexcAPIKey: "",
-    mexcSecretKey: ""
+    password: hashedPassword
   });
 
   res.status(201).json({ account: sanitizeAccount(account) });
@@ -65,35 +56,6 @@ export const signIn = async (req: Request, res: Response): Promise<void> => {
   const isMatch = await bcrypt.compare(password, account.password);
   if (!isMatch) {
     res.status(401).json({ message: "Invalid email or password." });
-    return;
-  }
-
-  res.status(200).json({ account: sanitizeAccount(account) });
-};
-
-export const updateKeys = async (req: Request, res: Response): Promise<void> => {
-  const { email, mexcAPIKey, mexcSecretKey } = req.body as {
-    email?: string;
-    mexcAPIKey?: string;
-    mexcSecretKey?: string;
-  };
-
-  if (!email) {
-    res.status(400).json({ message: "Email is required." });
-    return;
-  }
-
-  const account = await Account.findOneAndUpdate(
-    { email: email.toLowerCase() },
-    {
-      mexcAPIKey: (mexcAPIKey ?? "").trim(),
-      mexcSecretKey: (mexcSecretKey ?? "").trim()
-    },
-    { new: true }
-  );
-
-  if (!account) {
-    res.status(404).json({ message: "Account not found." });
     return;
   }
 
