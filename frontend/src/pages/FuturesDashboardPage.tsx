@@ -108,8 +108,11 @@ export const FuturesDashboardPage = () => {
   const [cancelResult, setCancelResult] = useState("");
   const [protectLoadingId, setProtectLoadingId] = useState<string | null>(null);
   const [protectError, setProtectError] = useState("");
+  type ProtectUnit = "price" | "roe" | "pnl";
   const [tpPriceTicket, setTpPriceTicket] = useState<string>("");
   const [slPriceTicket, setSlPriceTicket] = useState<string>("");
+  const [tpUnitTicket, setTpUnitTicket] = useState<ProtectUnit>("price");
+  const [slUnitTicket, setSlUnitTicket] = useState<ProtectUnit>("price");
 
   const lastPrice = useMemo(() => {
     const c = candles?.close;
@@ -429,6 +432,37 @@ export const FuturesDashboardPage = () => {
     } finally {
       setProtectLoadingId(null);
     }
+  };
+
+  const deriveProtectPriceFromUnit = ({
+    unit,
+    input,
+    sideIsLong,
+    entryPrice,
+    qty,
+    lev
+  }: {
+    unit: "price" | "roe" | "pnl";
+    input: number;
+    sideIsLong: boolean;
+    entryPrice: number;
+    qty: number;
+    lev: number;
+  }): number | null => {
+    if (!Number.isFinite(entryPrice) || entryPrice <= 0 || !Number.isFinite(qty) || qty <= 0) return null;
+    if (unit === "price") {
+      return input > 0 ? input : null;
+    }
+    if (unit === "pnl") {
+      const pnlPerUnit = input / qty;
+      const price = sideIsLong ? entryPrice + pnlPerUnit : entryPrice - pnlPerUnit;
+      return price > 0 ? price : null;
+    }
+    // ROE %
+    if (!Number.isFinite(lev) || lev <= 0) return null;
+    const roeFraction = input / (100 * lev);
+    const price = sideIsLong ? entryPrice * (1 + roeFraction) : entryPrice * (1 - roeFraction);
+    return price > 0 ? price : null;
   };
 
   if (!currentAccount) {
@@ -779,21 +813,43 @@ export const FuturesDashboardPage = () => {
                     </p>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
-                        <label className="text-[11px] font-medium uppercase tracking-wide text-emerald-200/80">TP price</label>
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[11px] font-medium uppercase tracking-wide text-emerald-200/80">Take profit</label>
+                          <select
+                            className="input-theme h-7 w-24 rounded px-2 py-1 text-[11px]"
+                            value={tpUnitTicket}
+                            onChange={(e) => setTpUnitTicket(e.target.value as ProtectUnit)}
+                          >
+                            <option value="price">Price</option>
+                            <option value="roe">ROE %</option>
+                            <option value="pnl">PnL</option>
+                          </select>
+                        </div>
                         <input
                           className="input-theme w-full rounded-lg px-3 py-2.5 text-sm"
                           type="text"
-                          placeholder="Optional"
+                          placeholder={tpUnitTicket === "price" ? "Optional price" : tpUnitTicket === "roe" ? "Optional ROE %" : "Optional USDT PnL"}
                           value={tpPriceTicket}
                           onChange={(e) => setTpPriceTicket(e.target.value)}
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-[11px] font-medium uppercase tracking-wide text-rose-200/80">SL price</label>
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[11px] font-medium uppercase tracking-wide text-rose-200/80">Stop loss</label>
+                          <select
+                            className="input-theme h-7 w-24 rounded px-2 py-1 text-[11px]"
+                            value={slUnitTicket}
+                            onChange={(e) => setSlUnitTicket(e.target.value as ProtectUnit)}
+                          >
+                            <option value="price">Price</option>
+                            <option value="roe">ROE %</option>
+                            <option value="pnl">PnL</option>
+                          </select>
+                        </div>
                         <input
                           className="input-theme w-full rounded-lg px-3 py-2.5 text-sm"
                           type="text"
-                          placeholder="Optional"
+                          placeholder={slUnitTicket === "price" ? "Optional price" : slUnitTicket === "roe" ? "Optional ROE %" : "Optional USDT PnL"}
                           value={slPriceTicket}
                           onChange={(e) => setSlPriceTicket(e.target.value)}
                         />
@@ -923,46 +979,68 @@ export const FuturesDashboardPage = () => {
                         const sizeForProtect = vol;
                         const isLongOpen = orderAction === "open_long";
                         const closeSide = isLongOpen ? 4 : 2;
+                        const entryPriceForProtect = isMarketOrder || isChaseOrder ? effectiveMarketPrice : effectivePrice;
+                        const levForProtect = leverage;
 
-                        const tpNum = Number(tpPriceTicket.trim());
-                        if (tpPriceTicket.trim() && Number.isFinite(tpNum) && tpNum > 0) {
-                          try {
-                            await submitTriggerOrder({
-                              symbol: symbolNormal(symbol),
-                              price: undefined,
-                              vol: sizeForProtect,
-                              leverage: undefined,
-                              side: closeSide,
-                              openType,
-                              triggerPrice: tpNum,
-                              triggerType: isLongOpen ? 1 : 2,
-                              executeCycle: 1,
-                              orderType: 5,
-                              trend: 1
-                            });
-                          } catch (e) {
-                            console.error("Failed to place TP trigger from ticket", e);
+                        if (tpPriceTicket.trim()) {
+                          const raw = Number(tpPriceTicket.trim());
+                          const priceFromUnit = deriveProtectPriceFromUnit({
+                            unit: tpUnitTicket,
+                            input: raw,
+                            sideIsLong: isLongOpen,
+                            entryPrice: entryPriceForProtect,
+                            qty: sizeForProtect,
+                            lev: levForProtect
+                          });
+                          if (priceFromUnit && Number.isFinite(priceFromUnit) && priceFromUnit > 0) {
+                            try {
+                              await submitTriggerOrder({
+                                symbol: symbolNormal(symbol),
+                                price: undefined,
+                                vol: sizeForProtect,
+                                leverage: undefined,
+                                side: closeSide,
+                                openType,
+                                triggerPrice: priceFromUnit,
+                                triggerType: isLongOpen ? 1 : 2,
+                                executeCycle: 1,
+                                orderType: 5,
+                                trend: 1
+                              });
+                            } catch (e) {
+                              console.error("Failed to place TP trigger from ticket", e);
+                            }
                           }
                         }
 
-                        const slNum = Number(slPriceTicket.trim());
-                        if (slPriceTicket.trim() && Number.isFinite(slNum) && slNum > 0) {
-                          try {
-                            await submitTriggerOrder({
-                              symbol: symbolNormal(symbol),
-                              price: undefined,
-                              vol: sizeForProtect,
-                              leverage: undefined,
-                              side: closeSide,
-                              openType,
-                              triggerPrice: slNum,
-                              triggerType: isLongOpen ? 2 : 1,
-                              executeCycle: 1,
-                              orderType: 5,
-                              trend: 1
-                            });
-                          } catch (e) {
-                            console.error("Failed to place SL trigger from ticket", e);
+                        if (slPriceTicket.trim()) {
+                          const raw = Number(slPriceTicket.trim());
+                          const priceFromUnit = deriveProtectPriceFromUnit({
+                            unit: slUnitTicket,
+                            input: raw,
+                            sideIsLong: isLongOpen,
+                            entryPrice: entryPriceForProtect,
+                            qty: sizeForProtect,
+                            lev: levForProtect
+                          });
+                          if (priceFromUnit && Number.isFinite(priceFromUnit) && priceFromUnit > 0) {
+                            try {
+                              await submitTriggerOrder({
+                                symbol: symbolNormal(symbol),
+                                price: undefined,
+                                vol: sizeForProtect,
+                                leverage: undefined,
+                                side: closeSide,
+                                openType,
+                                triggerPrice: priceFromUnit,
+                                triggerType: isLongOpen ? 2 : 1,
+                                executeCycle: 1,
+                                orderType: 5,
+                                trend: 1
+                              });
+                            } catch (e) {
+                              console.error("Failed to place SL trigger from ticket", e);
+                            }
                           }
                         }
                       }
