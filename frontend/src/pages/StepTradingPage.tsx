@@ -5,6 +5,7 @@ import { useBinanceMarkPriceStream } from "../hooks/useBinanceMarkPriceStream";
 import { fetchOpenPositions, submitTriggerOrder } from "../api/binanceApi";
 
 type SupportedSymbol = "BTCUSDT" | "ETHUSDT" | "SOLUSDT";
+type ProtectUnit = "price" | "roe" | "pnl";
 const SUPPORTED_SYMBOLS: SupportedSymbol[] = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 
 const symbolNormal = (s: string): SupportedSymbol => {
@@ -22,6 +23,8 @@ export const StepTradingPage = () => {
   const [protectSize, setProtectSize] = useState<string>("0");
   const [tpPrice, setTpPrice] = useState<string>("");
   const [slPrice, setSlPrice] = useState<string>("");
+  const [tpUnit, setTpUnit] = useState<ProtectUnit>("price");
+  const [slUnit, setSlUnit] = useState<ProtectUnit>("price");
   const [protectLoading, setProtectLoading] = useState<"tp" | "sl" | null>(null);
   const [protectError, setProtectError] = useState("");
   const [protectFullLoading, setProtectFullLoading] = useState(false);
@@ -31,6 +34,31 @@ export const StepTradingPage = () => {
     setBtcMin((prev) => (prev === null ? btcMarkPrice : Math.min(prev, btcMarkPrice)));
     setBtcMax((prev) => (prev === null ? btcMarkPrice : Math.max(prev, btcMarkPrice)));
   }, [btcMarkPrice]);
+
+  const derivePriceFromUnit = (args: {
+    unit: ProtectUnit;
+    input: number;
+    sideIsLong: boolean;
+    entryPrice: number;
+    qty: number;
+    leverage: number;
+  }): number | null => {
+    const { unit, input, sideIsLong, entryPrice, qty, leverage } = args;
+    if (!Number.isFinite(input) || input <= 0) return null;
+    if (unit === "price") return input;
+    if (!Number.isFinite(entryPrice) || entryPrice <= 0 || !Number.isFinite(qty) || qty <= 0) return null;
+
+    if (unit === "pnl") {
+      const pnlPerUnit = input / qty;
+      const price = sideIsLong ? entryPrice + pnlPerUnit : entryPrice - pnlPerUnit;
+      return price > 0 ? price : null;
+    }
+
+    if (!Number.isFinite(leverage) || leverage <= 0) return null;
+    const roeFraction = input / (100 * leverage);
+    const price = sideIsLong ? entryPrice * (1 + roeFraction) : entryPrice * (1 - roeFraction);
+    return price > 0 ? price : null;
+  };
 
   if (!currentAccount) {
     return (
@@ -111,8 +139,8 @@ export const StepTradingPage = () => {
               Binance conditional triggers for you.
             </p>
           </div>
-          <div className="flex flex-1 flex-col gap-3 rounded-xl border border-sky-500/25 bg-slate-950/60 px-3 py-3 md:px-4">
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="flex flex-1 flex-col gap-4 rounded-xl border border-sky-500/25 bg-slate-950/60 px-3 py-3 md:px-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
                 <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Position side</span>
                 <div className="inline-flex rounded-lg border border-slate-600/60 bg-slate-950/80 p-0.5 shadow-inner shadow-slate-900/60">
@@ -140,7 +168,7 @@ export const StepTradingPage = () => {
                   </button>
                 </div>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 lg:col-span-2">
                 <label className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
                   Size
                   <span className="ml-1 text-[10px] font-normal text-slate-500">(contracts / base)</span>
@@ -182,30 +210,57 @@ export const StepTradingPage = () => {
                   </button>
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-medium uppercase tracking-wide text-emerald-300/80">Take profit price</label>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/[0.06] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-emerald-300/90">Take profit</label>
+                  <select
+                    className="input-theme h-7 w-20 rounded px-2 py-1 text-[11px]"
+                    value={tpUnit}
+                    onChange={(e) => setTpUnit(e.target.value as ProtectUnit)}
+                  >
+                    <option value="price">Price</option>
+                    <option value="roe">ROE %</option>
+                    <option value="pnl">PnL</option>
+                  </select>
+                </div>
                 <input
-                  className="input-theme w-full rounded-lg px-3 py-2 text-sm tabular-nums"
+                  className="input-theme mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums"
                   type="number"
                   step="any"
                   value={tpPrice}
                   onChange={(e) => setTpPrice(e.target.value)}
-                  placeholder="Optional"
+                  placeholder={tpUnit === "price" ? "Price" : tpUnit === "roe" ? "ROE %" : "PnL (USDT)"}
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-medium uppercase tracking-wide text-rose-300/80">Stop loss price</label>
+
+              <div className="rounded-lg border border-rose-500/25 bg-rose-500/[0.06] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-rose-300/90">Stop loss</label>
+                  <select
+                    className="input-theme h-7 w-20 rounded px-2 py-1 text-[11px]"
+                    value={slUnit}
+                    onChange={(e) => setSlUnit(e.target.value as ProtectUnit)}
+                  >
+                    <option value="price">Price</option>
+                    <option value="roe">ROE %</option>
+                    <option value="pnl">PnL</option>
+                  </select>
+                </div>
                 <input
-                  className="input-theme w-full rounded-lg px-3 py-2 text-sm tabular-nums"
+                  className="input-theme mt-2 w-full rounded-lg px-3 py-2 text-sm tabular-nums"
                   type="number"
                   step="any"
                   value={slPrice}
                   onChange={(e) => setSlPrice(e.target.value)}
-                  placeholder="Optional"
+                  placeholder={slUnit === "price" ? "Price" : slUnit === "roe" ? "ROE %" : "PnL (USDT)"}
                 />
               </div>
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-3">
+
+            <div className="mt-1 flex flex-wrap items-center gap-3 border-t border-sky-500/20 pt-3">
               <button
                 type="button"
                 className="neon-btn rounded-lg px-4 py-2 text-xs font-semibold text-white disabled:opacity-70"
@@ -213,19 +268,37 @@ export const StepTradingPage = () => {
                 onClick={async () => {
               setProtectError("");
               const sizeNum = Number(protectSize.trim());
-              const priceNum = Number(tpPrice.trim());
+              const inputNum = Number(tpPrice.trim());
               if (!Number.isFinite(sizeNum) || sizeNum <= 0) {
                 setProtectError("Enter a positive size.");
                 return;
               }
-              if (!Number.isFinite(priceNum) || priceNum <= 0) {
-                setProtectError("Enter a positive TP price.");
+              if (!Number.isFinite(inputNum) || inputNum <= 0) {
+                setProtectError(`Enter a positive TP ${tpUnit === "price" ? "price" : tpUnit === "roe" ? "ROE %" : "PnL"} value.`);
                 return;
               }
               const isLong = protectSide === "long";
               const side = isLong ? 4 : 2;
               setProtectLoading("tp");
               try {
+                const positionsRes = await fetchOpenPositions({ symbol });
+                const list = Array.isArray(positionsRes.data) ? positionsRes.data : [];
+                const wantType = isLong ? 1 : 2;
+                const pos = list.find((p) => p.positionType === wantType && p.symbol === symbol);
+                if (!pos || !Number.isFinite(Number(pos.holdAvgPrice)) || Number(pos.holdAvgPrice) <= 0) {
+                  throw new Error(`No ${protectSide} position found for ${symbol}.`);
+                }
+                const triggerPrice = derivePriceFromUnit({
+                  unit: tpUnit,
+                  input: inputNum,
+                  sideIsLong: isLong,
+                  entryPrice: Number(pos.holdAvgPrice),
+                  qty: sizeNum,
+                  leverage: Number(pos.leverage) || 1
+                });
+                if (!triggerPrice || !Number.isFinite(triggerPrice) || triggerPrice <= 0) {
+                  throw new Error("Could not derive TP trigger price from selected unit.");
+                }
                 await submitTriggerOrder({
                   symbol,
                   price: undefined,
@@ -233,7 +306,7 @@ export const StepTradingPage = () => {
                   leverage: undefined,
                   side,
                   openType: 1,
-                  triggerPrice: priceNum,
+                  triggerPrice,
                   triggerType: isLong ? 1 : 2,
                   executeCycle: 1,
                   orderType: 5,
@@ -255,19 +328,37 @@ export const StepTradingPage = () => {
                 onClick={async () => {
               setProtectError("");
               const sizeNum = Number(protectSize.trim());
-              const priceNum = Number(slPrice.trim());
+              const inputNum = Number(slPrice.trim());
               if (!Number.isFinite(sizeNum) || sizeNum <= 0) {
                 setProtectError("Enter a positive size.");
                 return;
               }
-              if (!Number.isFinite(priceNum) || priceNum <= 0) {
-                setProtectError("Enter a positive SL price.");
+              if (!Number.isFinite(inputNum) || inputNum <= 0) {
+                setProtectError(`Enter a positive SL ${slUnit === "price" ? "price" : slUnit === "roe" ? "ROE %" : "PnL"} value.`);
                 return;
               }
               const isLong = protectSide === "long";
               const side = isLong ? 4 : 2;
               setProtectLoading("sl");
               try {
+                const positionsRes = await fetchOpenPositions({ symbol });
+                const list = Array.isArray(positionsRes.data) ? positionsRes.data : [];
+                const wantType = isLong ? 1 : 2;
+                const pos = list.find((p) => p.positionType === wantType && p.symbol === symbol);
+                if (!pos || !Number.isFinite(Number(pos.holdAvgPrice)) || Number(pos.holdAvgPrice) <= 0) {
+                  throw new Error(`No ${protectSide} position found for ${symbol}.`);
+                }
+                const triggerPrice = derivePriceFromUnit({
+                  unit: slUnit,
+                  input: inputNum,
+                  sideIsLong: isLong,
+                  entryPrice: Number(pos.holdAvgPrice),
+                  qty: sizeNum,
+                  leverage: Number(pos.leverage) || 1
+                });
+                if (!triggerPrice || !Number.isFinite(triggerPrice) || triggerPrice <= 0) {
+                  throw new Error("Could not derive SL trigger price from selected unit.");
+                }
                 await submitTriggerOrder({
                   symbol,
                   price: undefined,
@@ -275,7 +366,7 @@ export const StepTradingPage = () => {
                   leverage: undefined,
                   side,
                   openType: 1,
-                  triggerPrice: priceNum,
+                  triggerPrice,
                   triggerType: isLong ? 2 : 1,
                   executeCycle: 1,
                   orderType: 5,
@@ -290,7 +381,7 @@ export const StepTradingPage = () => {
               >
                 {protectLoading === "sl" ? "Placing SL…" : "Place SL trigger"}
               </button>
-              <p className="ml-auto text-[11px] text-slate-500">
+              <p className="ml-auto text-[11px] text-slate-500 max-sm:ml-0">
                 Creates independent conditional closes; they will appear under your open orders on the main dashboard.
               </p>
             </div>
