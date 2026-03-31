@@ -125,31 +125,46 @@ export const validateStepsPayload = (body: {
 
   const normalized: StepDefinition[] = [];
   for (let i = 0; i < steps.length; i++) {
-    const s = steps[i];
-    if (!s || typeof s !== "object") return { ok: false, error: `Step ${i + 1} is invalid.` };
-    const action = s.action;
-    if (!["open_long", "open_short", "close_long", "close_short"].includes(action)) {
-      return { ok: false, error: `Step ${i + 1}: invalid action.` };
-    }
-    const qty = Number(s.quantity);
-    if (!Number.isFinite(qty) || qty <= 0) return { ok: false, error: `Step ${i + 1}: quantity must be positive.` };
-    const wtt = Number(s.whenTriggeredType);
-    if (wtt !== 1 && wtt !== 5) return { ok: false, error: `Step ${i + 1}: whenTriggeredType must be 1 (limit stop) or 5 (market stop).` };
-    let limitPrice: number | undefined;
-    if (wtt === 1) {
-      const lp = Number(s.limitPrice);
-      if (!Number.isFinite(lp) || lp <= 0) return { ok: false, error: `Step ${i + 1}: limitPrice required for limit stop.` };
-      limitPrice = lp;
-    }
-    normalized.push({
+    const out = normalizeStep(steps[i], i + 1);
+    if (!out.ok) return out;
+    normalized.push(out.step);
+  }
+
+  return { ok: true, symbol, openType: openType as 1 | 2, leverage: Number(leverage), steps: normalized };
+};
+
+const normalizeStep = (
+  s: StepDefinition | undefined,
+  oneBasedIndex: number
+): { ok: true; step: StepDefinition } | { ok: false; error: string } => {
+  if (!s || typeof s !== "object") return { ok: false, error: `Step ${oneBasedIndex} is invalid.` };
+  const action = s.action;
+  if (!["open_long", "open_short", "close_long", "close_short"].includes(action)) {
+    return { ok: false, error: `Step ${oneBasedIndex}: invalid action.` };
+  }
+  const qty = Number(s.quantity);
+  if (!Number.isFinite(qty) || qty <= 0) return { ok: false, error: `Step ${oneBasedIndex}: quantity must be positive.` };
+  const wtt = Number(s.whenTriggeredType);
+  if (wtt !== 1 && wtt !== 5) return { ok: false, error: `Step ${oneBasedIndex}: whenTriggeredType must be 1 (limit) or 5 (market).` };
+  let limitPrice: number | undefined;
+  if (wtt === 1) {
+    const lp = Number(s.limitPrice);
+    if (!Number.isFinite(lp) || lp <= 0) return { ok: false, error: `Step ${oneBasedIndex}: limitPrice required for limit order.` };
+    limitPrice = lp;
+  }
+  return {
+    ok: true,
+    step: {
       action: action as StepPlanAction,
       quantity: qty,
       whenTriggeredType: wtt as 1 | 5,
       limitPrice
-    });
-  }
+    }
+  };
+};
 
-  return { ok: true, symbol, openType: openType as 1 | 2, leverage: Number(leverage), steps: normalized };
+export const validateSingleStepPayload = (body: { step?: unknown }): { ok: true; step: StepDefinition } | { ok: false; error: string } => {
+  return normalizeStep(body.step as StepDefinition | undefined, 1);
 };
 
 const PLAN_ACTIVE_STATUSES: StepPlanStatus[] = ["draft", "awaiting_confirm", "running"];
@@ -219,6 +234,48 @@ export const confirmCurrentStep = async (planId: string, stepIndex?: number): Pr
 
 export const getPlan = (id: string): StepPlan | undefined => plans.get(id);
 
+export const addStepToPlan = (planId: string, step: StepDefinition): StepPlan => {
+  const plan = plans.get(planId);
+  if (!plan) throw new Error("Plan not found.");
+  if (plan.status !== "draft" && plan.status !== "awaiting_confirm") {
+    throw new Error("Can only add steps when plan is draft or awaiting_confirm.");
+  }
+  if (plan.activeOrderId !== null) {
+    throw new Error("Cannot add steps while an order is live.");
+  }
+  if (plan.steps.length >= MAX_STEPS) {
+    throw new Error(`At most ${MAX_STEPS} steps allowed.`);
+  }
+  plan.steps.push(step);
+  plan.updatedAt = Date.now();
+  plan.message = `Step ${plan.steps.length} confirmed into plan.`;
+  return plan;
+};
+
+export const removeStepFromPlan = (planId: string, stepIndex: number): StepPlan => {
+  const plan = plans.get(planId);
+  if (!plan) throw new Error("Plan not found.");
+  if (plan.status !== "draft" && plan.status !== "awaiting_confirm") {
+    throw new Error("Can only remove steps when plan is draft or awaiting_confirm.");
+  }
+  if (plan.activeOrderId !== null) {
+    throw new Error("Cannot remove steps while an order is live.");
+  }
+  if (!Number.isInteger(stepIndex) || stepIndex < 0 || stepIndex >= plan.steps.length) {
+    throw new Error("Invalid stepIndex.");
+  }
+  if (stepIndex < plan.currentStepIndex) {
+    throw new Error("Cannot remove a completed step.");
+  }
+  plan.steps.splice(stepIndex, 1);
+  if (plan.currentStepIndex >= plan.steps.length) {
+    plan.currentStepIndex = Math.max(0, plan.steps.length - 1);
+  }
+  plan.updatedAt = Date.now();
+  plan.message = plan.steps.length === 0 ? "All steps removed. Add steps to continue." : `Step ${stepIndex + 1} removed.`;
+  return plan;
+};
+
 export const listPlans = (): StepPlan[] => {
   return Array.from(plans.values()).sort((a, b) => b.updatedAt - a.updatedAt);
 };
@@ -265,7 +322,7 @@ async function placeCurrentStep(plan: StepPlan): Promise<void> {
   });
 
   plan.activeOrderId = orderId;
-  plan.message = `Step ${plan.currentStepIndex + 1}/${plan.steps.length}: conditional stop algoId=${orderId} placed (only this step is on the book).`;
+  plan.message = `Step ${plan.currentStepIndex + 1}/${plan.steps.length}: order #${orderId} placed (only this step is on the book).`;
   plan.updatedAt = Date.now();
 }
 

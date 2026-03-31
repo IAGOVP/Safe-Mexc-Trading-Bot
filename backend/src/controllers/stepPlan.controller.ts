@@ -1,10 +1,13 @@
 import { Request, Response } from "express";
 import {
+  addStepToPlan,
   confirmCurrentStep,
   createStepPlan,
   getPlan,
   listPlans,
+  removeStepFromPlan,
   stopPlan,
+  validateSingleStepPayload,
   validateStepsPayload
 } from "../services/stepPlan.service";
 
@@ -49,6 +52,44 @@ export const postConfirmStepPlan = async (req: Request, res: Response): Promise<
     res.status(200).json({ data: wrap(plan) });
   } catch (err) {
     res.status(400).json({ message: err instanceof Error ? err.message : "Failed to confirm step." });
+  }
+};
+
+export const postAddStepToPlan = async (req: Request, res: Response): Promise<void> => {
+  const id = typeof req.params.id === "string" ? req.params.id : req.params.id?.[0];
+  if (!id) {
+    res.status(400).json({ message: "plan id is required." });
+    return;
+  }
+  const v = validateSingleStepPayload(req.body as { step?: unknown });
+  if (!v.ok) {
+    res.status(400).json({ message: v.error });
+    return;
+  }
+  try {
+    const plan = addStepToPlan(id, v.step);
+    res.status(200).json({ data: wrap(plan) });
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : "Failed to add step." });
+  }
+};
+
+export const postRemoveStepFromPlan = async (req: Request, res: Response): Promise<void> => {
+  const id = typeof req.params.id === "string" ? req.params.id : req.params.id?.[0];
+  if (!id) {
+    res.status(400).json({ message: "plan id is required." });
+    return;
+  }
+  const stepIndex = Number((req.body as { stepIndex?: number }).stepIndex);
+  if (!Number.isInteger(stepIndex)) {
+    res.status(400).json({ message: "stepIndex must be an integer." });
+    return;
+  }
+  try {
+    const plan = removeStepFromPlan(id, stepIndex);
+    res.status(200).json({ data: wrap(plan) });
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : "Failed to remove step." });
   }
 };
 

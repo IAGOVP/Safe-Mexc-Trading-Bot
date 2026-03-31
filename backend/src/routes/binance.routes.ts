@@ -13,8 +13,10 @@ import {
 import {
   getStepPlan,
   getStepPlans,
+  postAddStepToPlan,
   postConfirmStepPlan,
   postCreateStepPlan,
+  postRemoveStepFromPlan,
   postStopStepPlan
 } from "../controllers/stepPlan.controller";
 
@@ -35,6 +37,8 @@ binanceRouter.post("/steps/plan", postCreateStepPlan);
 binanceRouter.post("/steps/start", postCreateStepPlan);
 binanceRouter.get("/steps/plans", getStepPlans);
 binanceRouter.get("/steps/plans/:id", getStepPlan);
+binanceRouter.post("/steps/plans/:id/steps/add", postAddStepToPlan);
+binanceRouter.post("/steps/plans/:id/steps/remove", postRemoveStepFromPlan);
 binanceRouter.post("/steps/plans/:id/confirm", postConfirmStepPlan);
 binanceRouter.post("/steps/plans/:id/stop", postStopStepPlan);
 

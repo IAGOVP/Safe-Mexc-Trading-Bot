@@ -61,6 +61,36 @@ export const confirmStepPlan = async (planId: string, stepIndex?: number): Promi
   return inner;
 };
 
+export const addStepToPlan = async (planId: string, step: StepPlanStepPayload): Promise<StepPlanRecord> => {
+  const response = await fetch(`${API_URL}/binance/steps/plans/${encodeURIComponent(planId)}/steps/add`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ step })
+  });
+  const raw = (await response.json()) as { message?: string; data?: BinanceWrap<StepPlanRecord> };
+  if (!response.ok) {
+    throw new Error(raw.message ?? "Failed to add step.");
+  }
+  const inner = raw.data?.data;
+  if (!inner) throw new Error("Unexpected add step response.");
+  return inner;
+};
+
+export const removeStepFromPlan = async (planId: string, stepIndex: number): Promise<StepPlanRecord> => {
+  const response = await fetch(`${API_URL}/binance/steps/plans/${encodeURIComponent(planId)}/steps/remove`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stepIndex })
+  });
+  const raw = (await response.json()) as { message?: string; data?: BinanceWrap<StepPlanRecord> };
+  if (!response.ok) {
+    throw new Error(raw.message ?? "Failed to remove step.");
+  }
+  const inner = raw.data?.data;
+  if (!inner) throw new Error("Unexpected remove step response.");
+  return inner;
+};
+
 export const fetchStepPlans = async (): Promise<StepPlanRecord[]> => {
   const response = await fetch(`${API_URL}/binance/steps/plans`);
   const raw = (await response.json()) as { message?: string; data?: BinanceWrap<StepPlanRecord[]> };
