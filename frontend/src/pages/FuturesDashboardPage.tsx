@@ -106,6 +106,10 @@ export const FuturesDashboardPage = () => {
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelError, setCancelError] = useState("");
   const [cancelResult, setCancelResult] = useState("");
+  const [protectLoadingId, setProtectLoadingId] = useState<string | null>(null);
+  const [protectError, setProtectError] = useState("");
+  const [tpPriceTicket, setTpPriceTicket] = useState<string>("");
+  const [slPriceTicket, setSlPriceTicket] = useState<string>("");
 
   const lastPrice = useMemo(() => {
     const c = candles?.close;
@@ -376,6 +380,57 @@ export const FuturesDashboardPage = () => {
     return candlesSortedDesc.slice(0, Math.min(cap, candleTotalRows));
   }, [candlesExpanded, candlesSortedDesc, candlesVisibleRows, candleTotalRows]);
 
+  const placeTpSlForPosition = async (p: {
+    positionId: string;
+    symbol: string;
+    positionType: number;
+    holdVol: number;
+  }, kind: "tp" | "sl") => {
+    const raw = window.prompt(
+      kind === "tp"
+        ? `Take profit price for ${p.symbol} ${p.positionType === 1 ? "LONG" : "SHORT"} (size ${p.holdVol})`
+        : `Stop loss price for ${p.symbol} ${p.positionType === 1 ? "LONG" : "SHORT"} (size ${p.holdVol})`
+    );
+    if (!raw) return;
+    const price = Number(raw.trim());
+    if (!Number.isFinite(price) || price <= 0) {
+      window.alert("Enter a positive numeric price.");
+      return;
+    }
+
+    const isLong = p.positionType === 1;
+    const sideForClose = isLong ? 4 : 2; // close_long / close_short
+
+    setProtectLoadingId(`${p.positionId}:${kind}`);
+    setProtectError("");
+    try {
+      await submitTriggerOrder({
+        symbol: p.symbol,
+        price: undefined,
+        vol: p.holdVol,
+        leverage: undefined,
+        side: sideForClose,
+        openType,
+        triggerPrice: price,
+        triggerType: isLong
+          ? kind === "tp"
+            ? 1 // long TP: ≥
+            : 2 // long SL: ≤
+          : kind === "tp"
+            ? 2 // short TP: ≤
+            : 1, // short SL: ≥
+        executeCycle: 1,
+        orderType: 5,
+        trend: 1
+      });
+      await loadOpenOrders();
+    } catch (err) {
+      setProtectError(err instanceof Error ? err.message : "Failed to place TP/SL trigger.");
+    } finally {
+      setProtectLoadingId(null);
+    }
+  };
+
   if (!currentAccount) {
     return (
       <main className="mx-auto mt-14 max-w-5xl px-4">
@@ -455,6 +510,7 @@ export const FuturesDashboardPage = () => {
                         <th className="py-2 pr-3">Size</th>
                         <th className="py-2 pr-3">Avg Price</th>
                         <th className="py-2 pr-3">Realized</th>
+                        <th className="py-2 pr-3">Protect</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -467,6 +523,26 @@ export const FuturesDashboardPage = () => {
                             <td className="py-2 pr-3">{p.holdVol}</td>
                             <td className="py-2 pr-3">{p.holdAvgPrice.toFixed(4)}</td>
                             <td className="py-2 pr-3">{p.realised.toFixed(4)}</td>
+                            <td className="py-2 pr-3">
+                              <div className="flex gap-1">
+                                <button
+                                  type="button"
+                                  className="ghost-btn rounded-md px-2 py-1 text-[11px] text-emerald-200"
+                                  disabled={protectLoadingId === `${p.positionId}:tp`}
+                                  onClick={() => placeTpSlForPosition(p, "tp")}
+                                >
+                                  {protectLoadingId === `${p.positionId}:tp` ? "TP…" : "TP"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ghost-btn rounded-md px-2 py-1 text-[11px] text-rose-200"
+                                  disabled={protectLoadingId === `${p.positionId}:sl`}
+                                  onClick={() => placeTpSlForPosition(p, "sl")}
+                                >
+                                  {protectLoadingId === `${p.positionId}:sl` ? "SL…" : "SL"}
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })}
@@ -478,6 +554,7 @@ export const FuturesDashboardPage = () => {
           ) : (
             <p className="mt-6 text-sm text-slate-400">{positionsLoading ? "Loading positions..." : "No positions loaded."}</p>
           )}
+          {protectError ? <p className="mt-3 text-sm text-rose-400">{protectError}</p> : null}
         </div>
 
         <div className="glass-card flex max-h-[min(88vh,940px)] flex-col overflow-hidden rounded-2xl ring-1 ring-sky-500/20">
@@ -692,6 +769,39 @@ export const FuturesDashboardPage = () => {
                   </div>
                 ) : null}
 
+                {isOpening && isRegularMode ? (
+                  <div className="space-y-2 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.06] p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-200/90">
+                      Optional take profit / stop loss
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      Creates separate STOP_MARKET trigger orders for this size after the main open executes (one TP and/or one SL).
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-medium uppercase tracking-wide text-emerald-200/80">TP price</label>
+                        <input
+                          className="input-theme w-full rounded-lg px-3 py-2.5 text-sm"
+                          type="text"
+                          placeholder="Optional"
+                          value={tpPriceTicket}
+                          onChange={(e) => setTpPriceTicket(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-medium uppercase tracking-wide text-rose-200/80">SL price</label>
+                        <input
+                          className="input-theme w-full rounded-lg px-3 py-2.5 text-sm"
+                          type="text"
+                          placeholder="Optional"
+                          value={slPriceTicket}
+                          onChange={(e) => setSlPriceTicket(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {ticketOrderMode === "trigger" ? (
                   <div className="space-y-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] p-3">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-200/90">Trigger</p>
@@ -807,6 +917,56 @@ export const FuturesDashboardPage = () => {
                       } else {
                         setOrderResult(`${ticketOrderMode === "trigger" ? "Trigger" : orderTypeLabel} submitted.`);
                       }
+
+                      // Attach optional TP/SL for newly opened positions as separate STOP_MARKET triggers
+                      if (isOpening && ticketOrderMode === "regular" && (tpPriceTicket.trim() || slPriceTicket.trim())) {
+                        const sizeForProtect = vol;
+                        const isLongOpen = orderAction === "open_long";
+                        const closeSide = isLongOpen ? 4 : 2;
+
+                        const tpNum = Number(tpPriceTicket.trim());
+                        if (tpPriceTicket.trim() && Number.isFinite(tpNum) && tpNum > 0) {
+                          try {
+                            await submitTriggerOrder({
+                              symbol: symbolNormal(symbol),
+                              price: undefined,
+                              vol: sizeForProtect,
+                              leverage: undefined,
+                              side: closeSide,
+                              openType,
+                              triggerPrice: tpNum,
+                              triggerType: isLongOpen ? 1 : 2,
+                              executeCycle: 1,
+                              orderType: 5,
+                              trend: 1
+                            });
+                          } catch (e) {
+                            console.error("Failed to place TP trigger from ticket", e);
+                          }
+                        }
+
+                        const slNum = Number(slPriceTicket.trim());
+                        if (slPriceTicket.trim() && Number.isFinite(slNum) && slNum > 0) {
+                          try {
+                            await submitTriggerOrder({
+                              symbol: symbolNormal(symbol),
+                              price: undefined,
+                              vol: sizeForProtect,
+                              leverage: undefined,
+                              side: closeSide,
+                              openType,
+                              triggerPrice: slNum,
+                              triggerType: isLongOpen ? 2 : 1,
+                              executeCycle: 1,
+                              orderType: 5,
+                              trend: 1
+                            });
+                          } catch (e) {
+                            console.error("Failed to place SL trigger from ticket", e);
+                          }
+                        }
+                      }
+
                       await loadPositions();
                       await loadOpenOrders();
                     } catch (err) {
