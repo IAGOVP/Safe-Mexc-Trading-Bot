@@ -4,7 +4,6 @@ export type StepPlanAction = "open_long" | "open_short" | "close_long" | "close_
 
 export interface StepPlanStepPayload {
   action: StepPlanAction;
-  triggerPrice: number;
   quantity: number;
   whenTriggeredType: 1 | 5;
   limitPrice?: number;

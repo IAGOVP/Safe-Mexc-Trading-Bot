@@ -10,7 +10,6 @@ import {
 
 type StepFormRow = {
   action: StepPlanAction;
-  triggerPrice: string;
   quantity: string;
   whenTriggeredType: 1 | 5;
   limitPrice: string;
@@ -18,7 +17,6 @@ type StepFormRow = {
 
 const emptyRow = (): StepFormRow => ({
   action: "open_long",
-  triggerPrice: "",
   quantity: "",
   whenTriggeredType: 5,
   limitPrice: ""
@@ -72,9 +70,7 @@ export const StepOrdersSection = ({ symbol }: Props) => {
     setCreateLoading(true);
     try {
       const steps = rows.map((row, i) => {
-        const tp = Number(row.triggerPrice.trim());
         const qty = Number(row.quantity.trim());
-        if (!Number.isFinite(tp) || tp <= 0) throw new Error(`Step ${i + 1}: enter a valid trigger price.`);
         if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Step ${i + 1}: enter a valid quantity (contracts/base).`);
         const wtt = row.whenTriggeredType;
         let limitPrice: number | undefined;
@@ -85,7 +81,6 @@ export const StepOrdersSection = ({ symbol }: Props) => {
         }
         return {
           action: row.action,
-          triggerPrice: tp,
           quantity: qty,
           whenTriggeredType: wtt,
           limitPrice
@@ -234,15 +229,6 @@ export const StepOrdersSection = ({ symbol }: Props) => {
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-[11px] text-slate-500">Trigger price</label>
-                <input
-                  className="input-theme w-full rounded-lg px-2 py-2 text-sm tabular-nums"
-                  placeholder="e.g. 1.1"
-                  value={row.triggerPrice}
-                  onChange={(e) => patchRow(idx, { triggerPrice: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1">
                 <label className="text-[11px] text-slate-500">Quantity</label>
                 <input
                   className="input-theme w-full rounded-lg px-2 py-2 text-sm tabular-nums"
@@ -252,20 +238,20 @@ export const StepOrdersSection = ({ symbol }: Props) => {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[11px] text-slate-500">When triggered</label>
+                <label className="text-[11px] text-slate-500">Order type</label>
                 <select
                   className="input-theme w-full rounded-lg px-2 py-2 text-sm"
                   value={row.whenTriggeredType}
                   onChange={(e) => patchRow(idx, { whenTriggeredType: Number(e.target.value) as 1 | 5 })}
                 >
                   <option value={5}>Market</option>
-                  <option value={1}>Limit (needs limit price)</option>
+                  <option value={1}>Limit</option>
                 </select>
               </div>
             </div>
             {row.whenTriggeredType === 1 ? (
               <div className="mt-3 max-w-xs space-y-1">
-                <label className="text-[11px] text-slate-500">Limit price (after stop triggers)</label>
+                <label className="text-[11px] text-slate-500">Limit price</label>
                 <input
                   className="input-theme w-full rounded-lg px-2 py-2 text-sm tabular-nums"
                   placeholder="Limit"

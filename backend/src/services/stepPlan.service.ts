@@ -1,10 +1,5 @@
 import crypto from "crypto";
-import {
-  fapiCancelConditionalAlgoOrder,
-  fapiPlaceConditionalAlgoOrder,
-  fapiQueryConditionalAlgoStatusNormalized,
-  fapiSignedPost
-} from "./binance.service";
+import { fapiCancelFuturesOrderOrAlgo, fapiSignedGet, fapiSignedPost } from "./binance.service";
 
 const toBinanceSymbol = (s: string): string => s.trim().toUpperCase().replace(/[_\-/]/g, "");
 
@@ -49,9 +44,8 @@ export type StepPlanStatus = "draft" | "running" | "awaiting_confirm" | "complet
 
 export interface StepDefinition {
   action: StepPlanAction;
-  triggerPrice: number;
   quantity: number;
-  /** 5 = STOP_MARKET when triggered; 1 = STOP (limit) when triggered — requires limitPrice */
+  /** 5 = MARKET; 1 = LIMIT (requires limitPrice) */
   whenTriggeredType: 1 | 5;
   limitPrice?: number;
 }
@@ -75,11 +69,10 @@ const tickLocks = new Set<string>();
 
 const MAX_STEPS = 15;
 
-const placeStopOrder = async (opts: {
+const placeStepOrder = async (opts: {
   symbol: string;
   side: number;
   vol: number;
-  triggerPrice: number;
   orderType: number;
   limitPrice?: number;
   openType: number;
@@ -91,29 +84,28 @@ const placeStopOrder = async (opts: {
   await setMarginAndLeverage(sym, opts.openType, isOpening ? opts.leverage : opts.leverage ?? undefined);
 
   const execMarket = opts.orderType === 5;
-  let limitPrice: string | undefined;
-  if (!execMarket) {
-    if (opts.limitPrice === undefined || opts.limitPrice === null || !Number.isFinite(Number(opts.limitPrice))) {
-      throw new Error("limitPrice is required for limit stop (whenTriggeredType 1).");
-    }
-    limitPrice = String(opts.limitPrice);
-  }
-
-  const { algoId } = await fapiPlaceConditionalAlgoOrder({
+  const params: Record<string, string | number | boolean | undefined> = {
     symbol: sym,
     side: binanceSide,
-    orderType: execMarket ? "STOP_MARKET" : "STOP",
-    triggerPrice: String(opts.triggerPrice),
-    quantity: String(opts.vol),
-    limitPrice,
-    workingType: "CONTRACT_PRICE",
-    reduceOnly
-  });
-  return algoId;
+    type: execMarket ? "MARKET" : "LIMIT",
+    quantity: String(opts.vol)
+  };
+  if (reduceOnly) params.reduceOnly = true;
+  if (!execMarket) {
+    if (opts.limitPrice === undefined || opts.limitPrice === null || !Number.isFinite(Number(opts.limitPrice))) {
+      throw new Error("limitPrice is required for LIMIT step orders.");
+    }
+    params.price = String(opts.limitPrice);
+  }
+
+  const order = await fapiSignedPost<{ orderId: number }>("/fapi/v1/order", params);
+  return order.orderId;
 };
 
-const fetchAlgoOrderStatus = async (_symbol: string, algoId: number): Promise<string | null> => {
-  return fapiQueryConditionalAlgoStatusNormalized(algoId);
+const fetchOrderStatus = async (symbol: string, orderId: number): Promise<string | null> => {
+  const sym = toBinanceSymbol(symbol);
+  const row = await fapiSignedGet<{ status?: string }>("/fapi/v1/order", { symbol: sym, orderId });
+  return row.status ?? null;
 };
 
 export const validateStepsPayload = (body: {
@@ -139,9 +131,7 @@ export const validateStepsPayload = (body: {
     if (!["open_long", "open_short", "close_long", "close_short"].includes(action)) {
       return { ok: false, error: `Step ${i + 1}: invalid action.` };
     }
-    const tp = Number(s.triggerPrice);
     const qty = Number(s.quantity);
-    if (!Number.isFinite(tp) || tp <= 0) return { ok: false, error: `Step ${i + 1}: triggerPrice must be positive.` };
     if (!Number.isFinite(qty) || qty <= 0) return { ok: false, error: `Step ${i + 1}: quantity must be positive.` };
     const wtt = Number(s.whenTriggeredType);
     if (wtt !== 1 && wtt !== 5) return { ok: false, error: `Step ${i + 1}: whenTriggeredType must be 1 (limit stop) or 5 (market stop).` };
@@ -153,7 +143,6 @@ export const validateStepsPayload = (body: {
     }
     normalized.push({
       action: action as StepPlanAction,
-      triggerPrice: tp,
       quantity: qty,
       whenTriggeredType: wtt as 1 | 5,
       limitPrice
@@ -245,9 +234,9 @@ export const stopPlan = async (id: string): Promise<StepPlan | null> => {
 
   if (plan.status === "running" && plan.activeOrderId !== null) {
     try {
-      await fapiCancelConditionalAlgoOrder(plan.activeOrderId);
+      await fapiCancelFuturesOrderOrAlgo(plan.symbol, plan.activeOrderId);
     } catch (e) {
-      plan.message = e instanceof Error ? e.message : "Failed to cancel active conditional order.";
+      plan.message = e instanceof Error ? e.message : "Failed to cancel active order.";
     }
   }
 
@@ -265,11 +254,10 @@ async function placeCurrentStep(plan: StepPlan): Promise<void> {
   const side = actionToSide(step.action);
   const needsLeverage = side === 1 || side === 3;
 
-  const orderId = await placeStopOrder({
+  const orderId = await placeStepOrder({
     symbol: plan.symbol,
     side,
     vol: step.quantity,
-    triggerPrice: step.triggerPrice,
     orderType: step.whenTriggeredType,
     limitPrice: step.limitPrice,
     openType: plan.openType,
@@ -302,7 +290,7 @@ export const tickStepPlans = async (): Promise<void> => {
 
       let st: string | null;
       try {
-        st = await fetchAlgoOrderStatus(plan.symbol, plan.activeOrderId);
+        st = await fetchOrderStatus(plan.symbol, plan.activeOrderId);
       } catch {
         continue;
       }
