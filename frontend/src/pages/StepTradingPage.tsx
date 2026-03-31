@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { StepOrdersSection } from "../components/steps/StepOrdersSection";
 import { useBinanceMarkPriceStream } from "../hooks/useBinanceMarkPriceStream";
-import { submitTriggerOrder } from "../api/binanceApi";
+import { fetchOpenPositions, submitTriggerOrder } from "../api/binanceApi";
 
 type SupportedSymbol = "BTCUSDT" | "ETHUSDT" | "SOLUSDT";
 const SUPPORTED_SYMBOLS: SupportedSymbol[] = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
@@ -24,6 +24,7 @@ export const StepTradingPage = () => {
   const [slPrice, setSlPrice] = useState<string>("");
   const [protectLoading, setProtectLoading] = useState<"tp" | "sl" | null>(null);
   const [protectError, setProtectError] = useState("");
+  const [protectFullLoading, setProtectFullLoading] = useState(false);
 
   useEffect(() => {
     if (btcMarkPrice === null || !Number.isFinite(btcMarkPrice)) return;
@@ -144,14 +145,42 @@ export const StepTradingPage = () => {
                   Size
                   <span className="ml-1 text-[10px] font-normal text-slate-500">(contracts / base)</span>
                 </label>
-                <input
-                  className="input-theme w-full rounded-lg px-3 py-2 text-sm tabular-nums"
-                  type="number"
-                  step="any"
-                  value={protectSize}
-                  onChange={(e) => setProtectSize(e.target.value)}
-                  placeholder="e.g. 5"
-                />
+                <div className="relative">
+                  <input
+                    className="input-theme w-full rounded-lg px-3 py-2 pr-12 text-sm tabular-nums"
+                    type="number"
+                    step="any"
+                    value={protectSize}
+                    onChange={(e) => setProtectSize(e.target.value)}
+                    placeholder="e.g. 5"
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-1 my-1 flex items-center rounded-md px-2.5 text-[11px] font-semibold text-sky-100 hover:text-sky-200 disabled:opacity-60"
+                    disabled={protectFullLoading}
+                    onClick={async () => {
+                      setProtectError("");
+                      setProtectFullLoading(true);
+                      try {
+                        const res = await fetchOpenPositions({ symbol });
+                        const list = Array.isArray(res.data) ? res.data : [];
+                        const wantType = protectSide === "long" ? 1 : 2;
+                        const pos = list.find((p) => p.positionType === wantType && p.symbol === symbol);
+                        if (!pos || !pos.holdVol || pos.holdVol <= 0) {
+                          setProtectError(`No ${protectSide} position found for ${symbol}.`);
+                        } else {
+                          setProtectSize(String(pos.holdVol));
+                        }
+                      } catch (e) {
+                        setProtectError(e instanceof Error ? e.message : "Failed to load position size.");
+                      } finally {
+                        setProtectFullLoading(false);
+                      }
+                    }}
+                  >
+                    {protectFullLoading ? "Full…" : "Full"}
+                  </button>
+                </div>
               </div>
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium uppercase tracking-wide text-emerald-300/80">Take profit price</label>
