@@ -16,7 +16,7 @@ export interface StepPlanRecord {
   openType: 1 | 2;
   leverage: number;
   steps: StepPlanStepPayload[];
-  status: "created" | "running" | "completed" | "stopped" | "failed";
+  status: "draft" | "running" | "awaiting_confirm" | "completed" | "stopped" | "failed";
   currentStepIndex: number;
   activeOrderId: number | null;
   message?: string;
@@ -26,23 +26,39 @@ export interface StepPlanRecord {
 
 type BinanceWrap<T> = { success: boolean; code: number; data: T };
 
-export const startStepPlan = async (payload: {
+/** Creates a draft plan — confirm each step separately before it is sent to Binance. */
+export const createStepPlan = async (payload: {
   symbol: string;
   openType: 1 | 2;
   leverage: number;
   steps: StepPlanStepPayload[];
 }): Promise<StepPlanRecord> => {
-  const response = await fetch(`${API_URL}/binance/steps/start`, {
+  const response = await fetch(`${API_URL}/binance/steps/plan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
   const raw = (await response.json()) as { message?: string; data?: BinanceWrap<StepPlanRecord> };
   if (!response.ok) {
-    throw new Error(raw.message ?? "Failed to start step plan.");
+    throw new Error(raw.message ?? "Failed to create step plan.");
   }
   const inner = raw.data?.data;
   if (!inner) throw new Error("Unexpected step plan response.");
+  return inner;
+};
+
+export const confirmStepPlan = async (planId: string, stepIndex?: number): Promise<StepPlanRecord> => {
+  const response = await fetch(`${API_URL}/binance/steps/plans/${encodeURIComponent(planId)}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stepIndex !== undefined ? { stepIndex } : {})
+  });
+  const raw = (await response.json()) as { message?: string; data?: BinanceWrap<StepPlanRecord> };
+  if (!response.ok) {
+    throw new Error(raw.message ?? "Failed to confirm step.");
+  }
+  const inner = raw.data?.data;
+  if (!inner) throw new Error("Unexpected confirm response.");
   return inner;
 };
 

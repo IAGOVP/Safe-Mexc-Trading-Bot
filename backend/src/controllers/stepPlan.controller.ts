@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import {
-  createAndStartPlan,
+  confirmCurrentStep,
+  createStepPlan,
   getPlan,
   listPlans,
   stopPlan,
@@ -13,7 +14,7 @@ const wrap = <T>(data: T): { success: true; code: number; data: T } => ({
   data
 });
 
-export const postStartStepPlan = async (req: Request, res: Response): Promise<void> => {
+export const postCreateStepPlan = async (req: Request, res: Response): Promise<void> => {
   const v = validateStepsPayload(req.body);
   if (!v.ok) {
     res.status(400).json({ message: v.error });
@@ -21,7 +22,7 @@ export const postStartStepPlan = async (req: Request, res: Response): Promise<vo
   }
 
   try {
-    const plan = createAndStartPlan({
+    const plan = createStepPlan({
       symbol: v.symbol,
       openType: v.openType,
       leverage: v.leverage,
@@ -29,7 +30,25 @@ export const postStartStepPlan = async (req: Request, res: Response): Promise<vo
     });
     res.status(200).json({ data: wrap(plan) });
   } catch (err) {
-    res.status(400).json({ message: err instanceof Error ? err.message : "Failed to start step plan." });
+    res.status(400).json({ message: err instanceof Error ? err.message : "Failed to create step plan." });
+  }
+};
+
+export const postConfirmStepPlan = async (req: Request, res: Response): Promise<void> => {
+  const id = typeof req.params.id === "string" ? req.params.id : req.params.id?.[0];
+  if (!id) {
+    res.status(400).json({ message: "plan id is required." });
+    return;
+  }
+
+  const stepIndexRaw = (req.body as { stepIndex?: number }).stepIndex;
+  const stepIndex = stepIndexRaw === undefined ? undefined : Number(stepIndexRaw);
+
+  try {
+    const plan = await confirmCurrentStep(id, Number.isFinite(stepIndex) ? stepIndex : undefined);
+    res.status(200).json({ data: wrap(plan) });
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : "Failed to confirm step." });
   }
 };
 

@@ -34,7 +34,7 @@ export const StepTradingPage = () => {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300/90">Trading</p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-50">Step trading</h2>
           <p className="mt-1 max-w-2xl text-sm text-slate-400">
-            Chained USDⓈ-M stop plans: one exchange order at a time, in order, on the server.
+            Chained USDⓈ-M stop plans: you confirm each step before it is sent; only one live stop at a time, in order.
           </p>
         </div>
         <div>

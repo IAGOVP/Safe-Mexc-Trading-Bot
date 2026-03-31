@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  confirmStepPlan,
+  createStepPlan,
   fetchStepPlans,
   type StepPlanAction,
   type StepPlanRecord,
-  startStepPlan,
   stopStepPlan
 } from "../../api/stepPlansApi";
 
@@ -40,8 +41,9 @@ export const StepOrdersSection = ({ symbol }: Props) => {
   const [rows, setRows] = useState<StepFormRow[]>([emptyRow(), emptyRow(), emptyRow()]);
   const [plans, setPlans] = useState<StepPlanRecord[]>([]);
   const [plansError, setPlansError] = useState("");
-  const [startError, setStartError] = useState("");
-  const [startLoading, setStartLoading] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createLoading, setCreateLoading] = useState(false);
+  const [confirmLoadingId, setConfirmLoadingId] = useState<string | null>(null);
   const [stopLoadingId, setStopLoadingId] = useState<string | null>(null);
 
   const loadPlans = useCallback(async () => {
@@ -65,9 +67,9 @@ export const StepOrdersSection = ({ symbol }: Props) => {
   const patchRow = (idx: number, patch: Partial<StepFormRow>) =>
     setRows((r) => r.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
 
-  const handleStart = async () => {
-    setStartError("");
-    setStartLoading(true);
+  const handleCreatePlan = async () => {
+    setCreateError("");
+    setCreateLoading(true);
     try {
       const steps = rows.map((row, i) => {
         const tp = Number(row.triggerPrice.trim());
@@ -90,7 +92,7 @@ export const StepOrdersSection = ({ symbol }: Props) => {
         };
       });
 
-      await startStepPlan({
+      await createStepPlan({
         symbol,
         openType,
         leverage,
@@ -99,9 +101,22 @@ export const StepOrdersSection = ({ symbol }: Props) => {
       setRows([emptyRow(), emptyRow(), emptyRow()]);
       await loadPlans();
     } catch (e) {
-      setStartError(e instanceof Error ? e.message : "Start failed.");
+      setCreateError(e instanceof Error ? e.message : "Create failed.");
     } finally {
-      setStartLoading(false);
+      setCreateLoading(false);
+    }
+  };
+
+  const handleConfirmStep = async (planId: string, stepIndex: number) => {
+    setPlansError("");
+    setConfirmLoadingId(planId);
+    try {
+      await confirmStepPlan(planId, stepIndex);
+      await loadPlans();
+    } catch (e) {
+      setPlansError(e instanceof Error ? e.message : "Confirm failed.");
+    } finally {
+      setConfirmLoadingId(null);
     }
   };
 
@@ -121,6 +136,10 @@ export const StepOrdersSection = ({ symbol }: Props) => {
     switch (s) {
       case "running":
         return "text-sky-300";
+      case "awaiting_confirm":
+        return "text-amber-300";
+      case "draft":
+        return "text-slate-400";
       case "completed":
         return "text-emerald-400";
       case "failed":
@@ -130,6 +149,14 @@ export const StepOrdersSection = ({ symbol }: Props) => {
     }
   };
 
+  const canConfirmStep = (p: StepPlanRecord) =>
+    (p.status === "draft" || p.status === "awaiting_confirm") &&
+    p.activeOrderId === null &&
+    p.currentStepIndex < p.steps.length;
+
+  const canStopPlan = (p: StepPlanRecord) =>
+    p.status === "draft" || p.status === "awaiting_confirm" || p.status === "running";
+
   return (
     <section className="mt-4 glass-card rounded-2xl p-6">
       <div className="flex flex-col gap-2 border-b border-sky-500/15 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -137,10 +164,10 @@ export const StepOrdersSection = ({ symbol }: Props) => {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300/90">Sequential steps</p>
           <h3 className="mt-1 text-lg font-semibold">Step orders</h3>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-400">
-            Define a strict order of stop-based actions for <span className="text-slate-200">{symbol}</span>. The server places{" "}
-            <strong className="font-medium text-slate-200">only the current step</strong> on Binance. The next step is submitted only after the
-            previous one is <strong className="font-medium text-slate-200">filled</strong>, so a later step (for example closing at $0.9) cannot execute
-            while earlier steps are still working — even if price hits that level first.
+            Define a strict sequence of stop-based actions for <span className="text-slate-200">{symbol}</span>. Creating a plan saves a{" "}
+            <strong className="font-medium text-slate-200">draft</strong>; you <strong className="font-medium text-slate-200">confirm each step</strong>{" "}
+            before the server sends that stop to Binance. After a step fills, the next step waits for your confirmation again — only one live stop at a
+            time, in order.
           </p>
         </div>
       </div>
@@ -251,18 +278,20 @@ export const StepOrdersSection = ({ symbol }: Props) => {
         ))}
       </div>
 
-      {startError ? <p className="mt-3 text-sm text-rose-400">{startError}</p> : null}
+      {createError ? <p className="mt-3 text-sm text-rose-400">{createError}</p> : null}
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
           className="neon-btn rounded-lg px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-70"
-          disabled={startLoading}
-          onClick={handleStart}
+          disabled={createLoading}
+          onClick={handleCreatePlan}
         >
-          {startLoading ? "Starting…" : `Start plan on ${symbol}`}
+          {createLoading ? "Creating…" : `Create draft plan on ${symbol}`}
         </button>
-        <p className="text-xs text-slate-500">One running plan per symbol. Uses Binance STOP / STOP_MARKET (contract price).</p>
+        <p className="text-xs text-slate-500">
+          One active plan per symbol. Confirm steps from the list below. Binance STOP / STOP_MARKET (contract price).
+        </p>
       </div>
 
       <div className="mt-8 border-t border-sky-500/15 pt-6">
@@ -283,28 +312,42 @@ export const StepOrdersSection = ({ symbol }: Props) => {
                   <div>
                     <span className="font-mono text-xs text-slate-500">{p.id.slice(0, 8)}…</span>
                     <span className="ml-2 text-slate-300">{p.symbol}</span>
-                    <span className={`ml-2 text-xs font-semibold uppercase ${statusClass(p.status)}`}>{p.status}</span>
+                    <span className={`ml-2 text-xs font-semibold uppercase ${statusClass(p.status)}`}>{p.status.replace(/_/g, " ")}</span>
                     <span className="ml-2 text-xs text-slate-500">
                       {p.status === "completed"
                         ? `all ${p.steps.length} steps done`
                         : p.status === "running"
-                          ? `on step ${p.currentStepIndex + 1} of ${p.steps.length}`
-                          : `at index ${p.currentStepIndex}`}
+                          ? `live: step ${p.currentStepIndex + 1} of ${p.steps.length}`
+                          : p.status === "draft" || p.status === "awaiting_confirm"
+                            ? `ready to confirm step ${p.currentStepIndex + 1} of ${p.steps.length}`
+                            : `step index ${p.currentStepIndex}`}
                     </span>
                     {p.activeOrderId !== null ? (
-                      <span className="ml-2 text-xs text-slate-500">order #{p.activeOrderId}</span>
+                      <span className="ml-2 text-xs text-slate-500">algo #{p.activeOrderId}</span>
                     ) : null}
                   </div>
-                  {p.status === "running" ? (
-                    <button
-                      type="button"
-                      className="ghost-btn self-start rounded-lg px-3 py-1.5 text-xs text-slate-100 sm:self-auto"
-                      disabled={stopLoadingId === p.id}
-                      onClick={() => handleStop(p.id)}
-                    >
-                      {stopLoadingId === p.id ? "Stopping…" : "Stop plan"}
-                    </button>
-                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                    {canConfirmStep(p) ? (
+                      <button
+                        type="button"
+                        className="neon-btn rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-70"
+                        disabled={confirmLoadingId === p.id}
+                        onClick={() => handleConfirmStep(p.id, p.currentStepIndex)}
+                      >
+                        {confirmLoadingId === p.id ? "Confirming…" : `Confirm step ${p.currentStepIndex + 1}`}
+                      </button>
+                    ) : null}
+                    {canStopPlan(p) ? (
+                      <button
+                        type="button"
+                        className="ghost-btn rounded-lg px-3 py-1.5 text-xs text-slate-100 disabled:opacity-70"
+                        disabled={stopLoadingId === p.id}
+                        onClick={() => handleStop(p.id)}
+                      >
+                        {stopLoadingId === p.id ? "Stopping…" : "Stop plan"}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 {p.message ? <p className="mt-2 text-xs text-slate-400">{p.message}</p> : null}
               </li>

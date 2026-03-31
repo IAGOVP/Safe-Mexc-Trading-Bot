@@ -1,5 +1,12 @@
 import { Request, Response } from "express";
-import { fapiPublicGet, fapiSignedDelete, fapiSignedGet, fapiSignedPost, sapiSignedPost } from "../services/binance.service";
+import {
+  fapiCancelFuturesOrderOrAlgo,
+  fapiPlaceConditionalAlgoOrder,
+  fapiPublicGet,
+  fapiSignedGet,
+  fapiSignedPost,
+  sapiSignedPost
+} from "../services/binance.service";
 
 const wrap = <T>(data: T): { success: true; code: number; data: T } => ({
   success: true,
@@ -312,22 +319,25 @@ export const submitTriggerOrder = async (req: Request, res: Response): Promise<v
   try {
     await setMarginAndLeverage(sym, openType, isOpening ? leverage : leverage ?? undefined);
 
-    const params: Record<string, string | number | boolean | undefined> = {
-      symbol: sym,
-      side: binanceSide,
-      type: execMarket ? "STOP_MARKET" : "STOP",
-      stopPrice: String(triggerPrice),
-      quantity: String(vol),
-      workingType: "CONTRACT_PRICE"
-    };
-    if (reduceOnly) params.reduceOnly = true;
-
-    if (!execMarket && price !== undefined && price !== "") {
-      params.price = String(price);
+    const limitPrice =
+      !execMarket && price !== undefined && price !== "" ? String(price) : undefined;
+    if (!execMarket && !limitPrice) {
+      res.status(400).json({ message: "price is required for limit stop (STOP) trigger orders." });
+      return;
     }
 
-    const order = await fapiSignedPost<{ orderId: number }>("/fapi/v1/order", params);
-    res.status(200).json({ data: wrap(order) });
+    const { algoId } = await fapiPlaceConditionalAlgoOrder({
+      symbol: sym,
+      side: binanceSide,
+      orderType: execMarket ? "STOP_MARKET" : "STOP",
+      triggerPrice: String(triggerPrice),
+      quantity: String(vol),
+      limitPrice,
+      workingType: "CONTRACT_PRICE",
+      reduceOnly
+    });
+
+    res.status(200).json({ data: wrap({ orderId: algoId, algoId }) });
   } catch (err) {
     res.status(400).json({ message: err instanceof Error ? err.message : "Failed to submit trigger order." });
   }
@@ -386,7 +396,12 @@ export const cancelOrders = async (req: Request, res: Response): Promise<void> =
 
   try {
     for (const id of orderIds.slice(0, 20)) {
-      const r = await fapiSignedDelete<unknown>("/fapi/v1/order", { symbol: sym, orderId: id });
+      const idNum = typeof id === "string" ? Number(id) : id;
+      if (!Number.isFinite(idNum)) {
+        res.status(400).json({ message: "Each orderId must be a number." });
+        return;
+      }
+      const r = await fapiCancelFuturesOrderOrAlgo(sym, idNum);
       results.push(r);
     }
     res.status(200).json({ data: wrap(results) });

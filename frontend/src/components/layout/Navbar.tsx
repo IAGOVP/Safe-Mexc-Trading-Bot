@@ -1,21 +1,13 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
 interface NavbarProps {
   onSignInClick: () => void;
   onSignUpClick: () => void;
-  onSettingsClick: () => void;
-  onDashboardClick: () => void;
-  onStepTradingClick: () => void;
 }
 
-export const Navbar = ({
-  onSignInClick,
-  onSignUpClick,
-  onSettingsClick,
-  onDashboardClick,
-  onStepTradingClick
-}: NavbarProps) => {
+export const Navbar = ({ onSignInClick, onSignUpClick }: NavbarProps) => {
   const { currentAccount, signOut } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -54,33 +46,27 @@ export const Navbar = ({
             </button>
             {isMenuOpen ? (
               <div className="glass-card absolute right-0 mt-2 w-48 rounded-xl p-1">
-                <button
-                  className="w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
-                  onClick={() => {
-                    onDashboardClick();
-                    setIsMenuOpen(false);
-                  }}
+                <Link
+                  to="/dashboard"
+                  className="block w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
+                  onClick={() => setIsMenuOpen(false)}
                 >
                   Dashboard
-                </button>
-                <button
-                  className="w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
-                  onClick={() => {
-                    onStepTradingClick();
-                    setIsMenuOpen(false);
-                  }}
+                </Link>
+                <Link
+                  to="/steps"
+                  className="block w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
+                  onClick={() => setIsMenuOpen(false)}
                 >
                   Step trading
-                </button>
-                <button
-                  className="w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
-                  onClick={() => {
-                    onSettingsClick();
-                    setIsMenuOpen(false);
-                  }}
+                </Link>
+                <Link
+                  to="/settings"
+                  className="block w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
+                  onClick={() => setIsMenuOpen(false)}
                 >
                   Settings
-                </button>
+                </Link>
                 <button
                   className="w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
                   onClick={() => {
