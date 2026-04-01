@@ -67,14 +67,14 @@ const buildSortedQuery = (params: Record<string, string | number | boolean | und
   return keys.map((k) => `${k}=${encodeURIComponent(String(params[k]))}`).join("&");
 };
 
-const parseBinanceResponse = async <T>(response: Response, context: string): Promise<T> => {
+const parseBinanceResponse = async <T>(response: Response, _context: string): Promise<T> => {
   const text = await response.text();
   let parsed: unknown = null;
   if (text.trim()) {
     try {
       parsed = JSON.parse(text) as unknown;
     } catch {
-      throw new Error(`${context}: invalid JSON (${response.status}). ${text.slice(0, 200)}`);
+      throw new Error(text.trim().slice(0, 200) || `Invalid response (HTTP ${response.status}).`);
     }
   }
 
@@ -82,17 +82,17 @@ const parseBinanceResponse = async <T>(response: Response, context: string): Pro
     const msg =
       parsed && typeof parsed === "object" && parsed !== null && "msg" in parsed
         ? String((parsed as { msg: string }).msg)
-        : text.slice(0, 300);
-    throw new Error(`${context}: HTTP ${response.status} ${msg}`);
+        : text.trim().slice(0, 300);
+    throw new Error(msg || `HTTP ${response.status}`);
   }
 
   if (parsed && typeof parsed === "object" && parsed !== null) {
     const o = parsed as { code?: number; msg?: string; message?: string; success?: boolean };
     if (o.success === false) {
-      throw new Error(`${context}: ${o.msg ?? o.message ?? "request failed"}`);
+      throw new Error(o.msg ?? o.message ?? "Request failed.");
     }
     if (typeof o.code === "number" && o.code < 0) {
-      throw new Error(`${context}: ${o.msg ?? o.message ?? "error"} (${o.code})`);
+      throw new Error(o.msg ?? o.message ?? "Exchange error.");
     }
   }
 

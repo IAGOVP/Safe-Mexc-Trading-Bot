@@ -14,7 +14,7 @@ const readApiErrorMessage = async (response: Response, fallback: string): Promis
 
   const base = parsedMessage || fallback;
   if (response.status === 400) {
-    return `Bad request: ${base}`;
+    return base;
   }
 
   if (response.status === 401 || response.status === 403) {
