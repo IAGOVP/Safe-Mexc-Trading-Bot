@@ -2,8 +2,8 @@ import { useState } from "react";
 import {
   addStepToPlan,
   createStepPlan,
+  fetchStepPlans,
   type StepPlanAction,
-  type StepPlanRecord
 } from "../../api/stepPlansApi";
 
 type StepFormRow = {
@@ -35,7 +35,6 @@ export const StepOrdersSection = ({ symbol }: Props) => {
   const [openType, setOpenType] = useState<1 | 2>(1);
   const [leverage, setLeverage] = useState(5);
   const [rows, setRows] = useState<StepFormRow[]>([emptyRow(), emptyRow(), emptyRow()]);
-  const [plans, setPlans] = useState<StepPlanRecord[]>([]);
   const [rowError, setRowError] = useState("");
   const [rowLoadingKey, setRowLoadingKey] = useState<string | null>(null);
 
@@ -59,13 +58,12 @@ export const StepOrdersSection = ({ symbol }: Props) => {
       }
       const step = { action: row.action, quantity: qty, whenTriggeredType: wtt, limitPrice };
 
-      const activePlan = plans.find((p) => p.symbol === symbol && (p.status === "draft" || p.status === "awaiting_confirm"));
+      const list = await fetchStepPlans();
+      const activePlan = list.find((p) => p.symbol === symbol && (p.status === "draft" || p.status === "awaiting_confirm"));
       if (!activePlan) {
-        const created = await createStepPlan({ symbol, openType, leverage, steps: [step] });
-        setPlans([created]);
+        await createStepPlan({ symbol, openType, leverage, steps: [step] });
       } else {
-        const updated = await addStepToPlan(activePlan.id, step);
-        setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+        await addStepToPlan(activePlan.id, step);
       }
       setRows((r) => (r.length <= 1 ? [emptyRow()] : r.filter((_, i) => i !== rowIndex)));
     } catch (e) {

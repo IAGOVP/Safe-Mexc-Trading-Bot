@@ -16,9 +16,10 @@ const symbolNormal = (s: string): SupportedSymbol => {
 export const StepTradingPage = () => {
   const { currentAccount } = useAuth();
   const [symbol, setSymbol] = useState<SupportedSymbol>("BTCUSDT");
-  const { markPrice: btcMarkPrice } = useBinanceMarkPriceStream("BTCUSDT", true);
-  const [btcMin, setBtcMin] = useState<number | null>(null);
-  const [btcMax, setBtcMax] = useState<number | null>(null);
+  const selectedSymbol = symbolNormal(symbol);
+  const { markPrice: liveMarkPrice } = useBinanceMarkPriceStream(selectedSymbol, true);
+  const [symbolMin, setSymbolMin] = useState<number | null>(null);
+  const [symbolMax, setSymbolMax] = useState<number | null>(null);
   const [protectSide, setProtectSide] = useState<"long" | "short">("long");
   const [protectSize, setProtectSize] = useState<string>("0");
   const [tpPrice, setTpPrice] = useState<string>("");
@@ -30,10 +31,15 @@ export const StepTradingPage = () => {
   const [protectFullLoading, setProtectFullLoading] = useState(false);
 
   useEffect(() => {
-    if (btcMarkPrice === null || !Number.isFinite(btcMarkPrice)) return;
-    setBtcMin((prev) => (prev === null ? btcMarkPrice : Math.min(prev, btcMarkPrice)));
-    setBtcMax((prev) => (prev === null ? btcMarkPrice : Math.max(prev, btcMarkPrice)));
-  }, [btcMarkPrice]);
+    setSymbolMin(null);
+    setSymbolMax(null);
+  }, [selectedSymbol]);
+
+  useEffect(() => {
+    if (liveMarkPrice === null || !Number.isFinite(liveMarkPrice)) return;
+    setSymbolMin((prev) => (prev === null ? liveMarkPrice : Math.min(prev, liveMarkPrice)));
+    setSymbolMax((prev) => (prev === null ? liveMarkPrice : Math.max(prev, liveMarkPrice)));
+  }, [liveMarkPrice]);
 
   const derivePriceFromUnit = (args: {
     unit: ProtectUnit;
@@ -85,24 +91,22 @@ export const StepTradingPage = () => {
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-end">
           <div className="rounded-2xl border border-amber-400/25 bg-slate-950/60 px-4 py-3 shadow-[0_0_0_1px_rgba(15,23,42,0.9)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-300/90">
-              BTCUSDT live mark
-            </p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-300/90">{selectedSymbol} live mark</p>
             <div className="mt-1 flex items-baseline gap-3">
               <span className="text-lg font-semibold tabular-nums text-slate-50">
-                {btcMarkPrice !== null ? btcMarkPrice.toFixed(2) : "--"}
+                {liveMarkPrice !== null ? liveMarkPrice.toFixed(2) : "--"}
               </span>
               <div className="flex gap-3 text-[11px] text-slate-400">
                 <span>
                   Min{" "}
                   <span className="font-mono text-xs text-slate-200">
-                    {btcMin !== null ? btcMin.toFixed(2) : "--"}
+                    {symbolMin !== null ? symbolMin.toFixed(2) : "--"}
                   </span>
                 </span>
                 <span>
                   Max{" "}
                   <span className="font-mono text-xs text-slate-200">
-                    {btcMax !== null ? btcMax.toFixed(2) : "--"}
+                    {symbolMax !== null ? symbolMax.toFixed(2) : "--"}
                   </span>
                 </span>
               </div>
