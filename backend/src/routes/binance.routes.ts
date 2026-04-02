@@ -11,6 +11,13 @@ import {
   submitTriggerOrder
 } from "../controllers/binance.controller";
 import {
+  getReverseStrategies,
+  getReverseStrategyById,
+  getReverseStrategyMilestones,
+  postStartReverseStrategy,
+  postStopReverseStrategy
+} from "../controllers/reverseStrategy.controller";
+import {
   getStepPlan,
   getStepPlans,
   postAddStepToPlan,
@@ -41,5 +48,11 @@ binanceRouter.post("/steps/plans/:id/steps/add", postAddStepToPlan);
 binanceRouter.post("/steps/plans/:id/steps/remove", postRemoveStepFromPlan);
 binanceRouter.post("/steps/plans/:id/confirm", postConfirmStepPlan);
 binanceRouter.post("/steps/plans/:id/stop", postStopStepPlan);
+
+binanceRouter.post("/reverse-strategy/start", postStartReverseStrategy);
+binanceRouter.get("/reverse-strategy/milestones", getReverseStrategyMilestones);
+binanceRouter.get("/reverse-strategy/runs", getReverseStrategies);
+binanceRouter.get("/reverse-strategy/runs/:id", getReverseStrategyById);
+binanceRouter.post("/reverse-strategy/runs/:id/stop", postStopReverseStrategy);
 
 export default binanceRouter;

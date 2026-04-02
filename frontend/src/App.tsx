@@ -8,6 +8,7 @@ import { HomePage } from "./pages/HomePage";
 import { FuturesDashboardPage } from "./pages/FuturesDashboardPage";
 import { AccountSettingsPage } from "./pages/AccountSettingsPage";
 import { StepTradingPage } from "./pages/StepTradingPage";
+import { ReverseStrategyPage } from "./pages/ReverseStrategyPage";
 
 function App() {
   const { currentAccount } = useAuth();
@@ -25,6 +26,7 @@ function App() {
         <Route path="/" element={currentAccount ? <FuturesDashboardPage /> : <HomePage />} />
         <Route path="/dashboard" element={<FuturesDashboardPage />} />
         <Route path="/steps" element={<StepTradingPage />} />
+        <Route path="/reverse" element={<ReverseStrategyPage />} />
         <Route path="/settings" element={<AccountSettingsPage />} />
       </Routes>
 
