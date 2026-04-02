@@ -6,7 +6,7 @@ const toBinanceSymbol = (s: string): string => s.trim().toUpperCase().replace(/[
 
 const REBOUND_BPS = Number(process.env.REVERSE_STRATEGY_REBOUND_BPS ?? "8") / 10_000;
 const DEFAULT_LEVERAGE = 100;
-const INITIAL_MARGIN_USDT = 1;
+const DEFAULT_START_MARGIN_USDT = 1;
 
 export type ReverseStrategyVariant = "200" | "300";
 
@@ -43,6 +43,8 @@ export interface ReverseStrategyRun {
   openType: 1 | 2;
   leverage: number;
   variant: ReverseStrategyVariant;
+  /** User-selected starting margin (USDT) used for bootstrap and scaling milestone adds. */
+  startMarginUsdt: number;
   /** Fixed reference: % triggers and floors use this, not the exchange average after adds. */
   refPrice: number;
   status: ReverseStrategyStatus;
@@ -216,6 +218,8 @@ export interface StartReverseStrategyBody {
   /** When true, place $1@100x long and $1@100x short at current mark, then start monitoring. */
   bootstrap?: boolean;
   leverage?: number;
+  /** Starting margin (USDT) per side. Milestone adds are multiplied by this value. Default = 1. */
+  startMarginUsdt?: number;
 }
 
 export const startReverseStrategy = async (body: StartReverseStrategyBody): Promise<ReverseStrategyRunDto> => {
@@ -232,6 +236,10 @@ export const startReverseStrategy = async (body: StartReverseStrategyBody): Prom
   }
 
   const leverage = Number.isFinite(Number(body.leverage)) && Number(body.leverage) >= 1 ? Number(body.leverage) : DEFAULT_LEVERAGE;
+  const startMarginUsdt =
+    Number.isFinite(Number(body.startMarginUsdt)) && Number(body.startMarginUsdt) > 0
+      ? Number(body.startMarginUsdt)
+      : DEFAULT_START_MARGIN_USDT;
   const sym = toBinanceSymbol(symbol);
   await setMarginAndLeverage(sym, body.openType, leverage);
 
@@ -239,7 +247,7 @@ export const startReverseStrategy = async (body: StartReverseStrategyBody): Prom
 
   if (body.bootstrap === true) {
     const mark = await fetchMarkPrice(sym);
-    const qtyStr = await qtyFromMarginUsdt(sym, mark, INITIAL_MARGIN_USDT, leverage);
+    const qtyStr = await qtyFromMarginUsdt(sym, mark, startMarginUsdt, leverage);
     await placeMarket({ symbol: sym, side: "BUY", quantity: qtyStr });
     await placeMarket({ symbol: sym, side: "SELL", quantity: qtyStr });
     refPrice = await fetchMarkPrice(sym);
@@ -263,6 +271,7 @@ export const startReverseStrategy = async (body: StartReverseStrategyBody): Prom
     openType: body.openType,
     leverage,
     variant: body.variant,
+    startMarginUsdt,
     refPrice,
     status: "running",
     firedMilestoneIndices: new Set(),
@@ -315,11 +324,12 @@ export const tickReverseStrategies = async (): Promise<void> => {
           const m = milestones[i];
           const triggerPx = run.refPrice * (m.triggerPct / 100);
           if (mark >= triggerPx) {
-            const qtyStr = await qtyFromMarginUsdt(run.symbol, mark, m.marginUsdt, run.leverage);
+            const scaledMargin = m.marginUsdt * run.startMarginUsdt;
+            const qtyStr = await qtyFromMarginUsdt(run.symbol, mark, scaledMargin, run.leverage);
             await setMarginAndLeverage(run.symbol, run.openType, run.leverage);
             await placeMarket({ symbol: run.symbol, side: "SELL", quantity: qtyStr });
             run.firedMilestoneIndices.add(i);
-            run.message = `Milestone ${m.triggerPct}%: added ~$${m.marginUsdt} margin short (${qtyStr} ${run.symbol}).`;
+            run.message = `Milestone ${m.triggerPct}%: added ~$${scaledMargin} margin short (${qtyStr} ${run.symbol}).`;
           }
         }
       }

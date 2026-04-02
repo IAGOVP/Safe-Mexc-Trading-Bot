@@ -14,6 +14,7 @@ export interface ReverseStrategyRun {
   openType: 1 | 2;
   leverage: number;
   variant: ReverseStrategyVariant;
+  startMarginUsdt: number;
   refPrice: number;
   status: "running" | "stopped" | "completed" | "failed";
   firedMilestoneIndices: number[];
@@ -63,6 +64,7 @@ export const startReverseStrategy = async (payload: {
   variant: ReverseStrategyVariant;
   bootstrap?: boolean;
   leverage?: number;
+  startMarginUsdt?: number;
 }): Promise<ReverseStrategyRun> => {
   const res = await fetch(`${API_URL}/binance/reverse-strategy/start`, {
     method: "POST",

@@ -15,12 +15,13 @@ const wrap = <T>(data: T): { success: true; code: number; data: T } => ({
 });
 
 export const postStartReverseStrategy = async (req: Request, res: Response): Promise<void> => {
-  const { symbol, openType, variant, bootstrap, leverage } = req.body as {
+  const { symbol, openType, variant, bootstrap, leverage, startMarginUsdt } = req.body as {
     symbol?: string;
     openType?: number;
     variant?: string;
     bootstrap?: boolean;
     leverage?: number;
+    startMarginUsdt?: number;
   };
 
   if (!symbol || typeof symbol !== "string") {
@@ -42,7 +43,8 @@ export const postStartReverseStrategy = async (req: Request, res: Response): Pro
       openType,
       variant: variant as ReverseStrategyVariant,
       bootstrap: bootstrap === true,
-      leverage
+      leverage,
+      startMarginUsdt
     });
     res.status(200).json({ data: wrap(run) });
   } catch (err) {

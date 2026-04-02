@@ -18,6 +18,7 @@ export const ReverseStrategySection = ({ symbol }: Props) => {
   const [variant, setVariant] = useState<ReverseStrategyVariant>("200");
   const [bootstrap, setBootstrap] = useState(false);
   const [leverage, setLeverage] = useState(100);
+  const [startMarginUsdt, setStartMarginUsdt] = useState(1);
   const [milestones, setMilestones] = useState<ReverseMilestone[]>([]);
   const [runs, setRuns] = useState<ReverseStrategyRun[]>([]);
   const [error, setError] = useState("");
@@ -110,6 +111,16 @@ export const ReverseStrategySection = ({ symbol }: Props) => {
           />
         </div>
         <div className="flex flex-col justify-end gap-2">
+          <label className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Starting margin (USDT)</label>
+          <input
+            className="input-theme mt-1 w-full rounded-lg px-3 py-2 text-sm tabular-nums"
+            type="number"
+            min={0.01}
+            step="0.01"
+            value={startMarginUsdt}
+            onChange={(e) => setStartMarginUsdt(Math.max(0.01, Number(e.target.value) || 1))}
+            disabled={!!activeRun}
+          />
           <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
             <input
               type="checkbox"
@@ -118,7 +129,7 @@ export const ReverseStrategySection = ({ symbol }: Props) => {
               onChange={(e) => setBootstrap(e.target.checked)}
               disabled={!!activeRun}
             />
-            Bootstrap $1 long + $1 short @ mark
+            Bootstrap using starting margin on both sides
           </label>
         </div>
       </div>
@@ -136,7 +147,7 @@ export const ReverseStrategySection = ({ symbol }: Props) => {
             {milestones.map((m, i) => (
               <tr key={i} className="border-b border-slate-800/80 last:border-0">
                 <td className="px-3 py-2 font-mono text-slate-100">{m.triggerPct}%</td>
-                <td className="px-3 py-2 font-mono">${m.marginUsdt}</td>
+                <td className="px-3 py-2 font-mono">${(m.marginUsdt * startMarginUsdt).toFixed(2)}</td>
                 <td className="px-3 py-2 font-mono">{m.minBoundPct}%</td>
               </tr>
             ))}
@@ -158,7 +169,8 @@ export const ReverseStrategySection = ({ symbol }: Props) => {
                 openType,
                 variant,
                 bootstrap,
-                leverage
+                leverage,
+                startMarginUsdt
               });
               await loadRuns();
             } catch (e) {
