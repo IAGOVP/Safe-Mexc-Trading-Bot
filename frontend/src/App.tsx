@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { Routes, Route } from "react-router-dom";
+import { useState } from "react";
 import { SignInDialog } from "./components/auth/SignInDialog";
 import { SignUpDialog } from "./components/auth/SignUpDialog";
 import { Navbar } from "./components/layout/Navbar";
@@ -6,31 +7,26 @@ import { useAuth } from "./context/AuthContext";
 import { HomePage } from "./pages/HomePage";
 import { FuturesDashboardPage } from "./pages/FuturesDashboardPage";
 import { AccountSettingsPage } from "./pages/AccountSettingsPage";
-
-type SignedInView = "dashboard" | "settings";
+import { StepTradingPage } from "./pages/StepTradingPage";
 
 function App() {
   const { currentAccount } = useAuth();
   const [showSignUp, setShowSignUp] = useState(false);
   const [showSignIn, setShowSignIn] = useState(false);
-  const [signedInView, setSignedInView] = useState<SignedInView>("dashboard");
-
-  useEffect(() => {
-    if (!currentAccount) {
-      setSignedInView("dashboard");
-    }
-  }, [currentAccount]);
 
   return (
     <div className="min-h-screen pb-12">
       <Navbar
         onSignInClick={() => setShowSignIn(true)}
         onSignUpClick={() => setShowSignUp(true)}
-        onSettingsClick={() => setSignedInView("settings")}
-        onDashboardClick={() => setSignedInView("dashboard")}
       />
 
-      {currentAccount ? (signedInView === "settings" ? <AccountSettingsPage /> : <FuturesDashboardPage />) : <HomePage />}
+      <Routes>
+        <Route path="/" element={currentAccount ? <FuturesDashboardPage /> : <HomePage />} />
+        <Route path="/dashboard" element={<FuturesDashboardPage />} />
+        <Route path="/steps" element={<StepTradingPage />} />
+        <Route path="/settings" element={<AccountSettingsPage />} />
+      </Routes>
 
       {showSignUp ? <SignUpDialog onClose={() => setShowSignUp(false)} /> : null}
       {showSignIn ? <SignInDialog onClose={() => setShowSignIn(false)} /> : null}

@@ -67,14 +67,14 @@ const buildSortedQuery = (params: Record<string, string | number | boolean | und
   return keys.map((k) => `${k}=${encodeURIComponent(String(params[k]))}`).join("&");
 };
 
-const parseBinanceResponse = async <T>(response: Response, context: string): Promise<T> => {
+const parseBinanceResponse = async <T>(response: Response, _context: string): Promise<T> => {
   const text = await response.text();
   let parsed: unknown = null;
   if (text.trim()) {
     try {
       parsed = JSON.parse(text) as unknown;
     } catch {
-      throw new Error(`${context}: invalid JSON (${response.status}). ${text.slice(0, 200)}`);
+      throw new Error(text.trim().slice(0, 200) || `Invalid response (HTTP ${response.status}).`);
     }
   }
 
@@ -82,17 +82,17 @@ const parseBinanceResponse = async <T>(response: Response, context: string): Pro
     const msg =
       parsed && typeof parsed === "object" && parsed !== null && "msg" in parsed
         ? String((parsed as { msg: string }).msg)
-        : text.slice(0, 300);
-    throw new Error(`${context}: HTTP ${response.status} ${msg}`);
+        : text.trim().slice(0, 300);
+    throw new Error(msg || `HTTP ${response.status}`);
   }
 
   if (parsed && typeof parsed === "object" && parsed !== null) {
     const o = parsed as { code?: number; msg?: string; message?: string; success?: boolean };
     if (o.success === false) {
-      throw new Error(`${context}: ${o.msg ?? o.message ?? "request failed"}`);
+      throw new Error(o.msg ?? o.message ?? "Request failed.");
     }
     if (typeof o.code === "number" && o.code < 0) {
-      throw new Error(`${context}: ${o.msg ?? o.message ?? "error"} (${o.code})`);
+      throw new Error(o.msg ?? o.message ?? "Exchange error.");
     }
   }
 
@@ -183,6 +183,77 @@ export const fapiSignedDelete = async <T>(path: string, params: Record<string, s
     headers: { Accept: "application/json", "X-MBX-APIKEY": apiKey }
   });
   return parseBinanceResponse<T>(response, `FAPI signed DELETE ${path}`);
+};
+
+/**
+ * USDⓈ-M conditional stops (STOP / STOP_MARKET) must use POST /fapi/v1/algoOrder, not /fapi/v1/order.
+ * @see https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Algo-Order
+ */
+export const fapiPlaceConditionalAlgoOrder = async (p: {
+  symbol: string;
+  side: "BUY" | "SELL";
+  orderType: "STOP_MARKET" | "STOP";
+  triggerPrice: string;
+  quantity: string;
+  limitPrice?: string;
+  workingType?: "CONTRACT_PRICE" | "MARK_PRICE";
+  reduceOnly?: boolean;
+}): Promise<{ algoId: number }> => {
+  const params: Record<string, string | number | boolean | undefined> = {
+    algoType: "CONDITIONAL",
+    symbol: p.symbol,
+    side: p.side,
+    type: p.orderType,
+    triggerPrice: p.triggerPrice,
+    quantity: p.quantity,
+    workingType: p.workingType ?? "CONTRACT_PRICE"
+  };
+  if (p.reduceOnly) params.reduceOnly = "true";
+  if (p.orderType === "STOP") {
+    if (!p.limitPrice) {
+      throw new Error("limit price is required for STOP conditional orders.");
+    }
+    params.price = p.limitPrice;
+    params.timeInForce = "GTC";
+  }
+  return fapiSignedPost<{ algoId: number }>("/fapi/v1/algoOrder", params);
+};
+
+/** Map GET /fapi/v1/algoOrder `algoStatus` to step-plan tick semantics. */
+export const normalizeFuturesAlgoStatusForStepTick = (algoStatus: string | undefined): string | null => {
+  if (!algoStatus) return null;
+  const u = algoStatus.toUpperCase();
+  if (u === "FINISHED" || u === "FILLED") return "FILLED";
+  if (u === "CANCELED" || u === "CANCELLED") return "CANCELED";
+  if (u === "EXPIRED") return "EXPIRED";
+  if (u === "REJECTED") return "REJECTED";
+  return "NEW";
+};
+
+export const fapiQueryConditionalAlgoStatusNormalized = async (algoId: number): Promise<string | null> => {
+  try {
+    const row = await fapiSignedGet<{ algoStatus?: string }>("/fapi/v1/algoOrder", { algoId });
+    return normalizeFuturesAlgoStatusForStepTick(row.algoStatus) ?? "NEW";
+  } catch {
+    return null;
+  }
+};
+
+export const fapiCancelConditionalAlgoOrder = async (algoId: number): Promise<unknown> => {
+  return fapiSignedDelete<unknown>("/fapi/v1/algoOrder", { algoId });
+};
+
+/** Cancel a normal order; if Binance reports unknown order (-2011), try conditional algo cancel (same numeric id). */
+export const fapiCancelFuturesOrderOrAlgo = async (symbol: string, id: number): Promise<unknown> => {
+  try {
+    return await fapiSignedDelete<unknown>("/fapi/v1/order", { symbol, orderId: id });
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    if (/\b-2011\b|Unknown order/i.test(m)) {
+      return fapiCancelConditionalAlgoOrder(id);
+    }
+    throw e;
+  }
 };
 
 /** USDⓈ-M algo orders (SAPI). See https://developers.binance.com/docs/algo/future-algo */
