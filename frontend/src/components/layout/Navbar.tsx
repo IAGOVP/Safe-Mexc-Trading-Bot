@@ -61,6 +61,13 @@ export const Navbar = ({ onSignInClick, onSignUpClick }: NavbarProps) => {
                   Step trading
                 </Link>
                 <Link
+                  to="/reverse"
+                  className="block w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Reverse strategy
+                </Link>
+                <Link
                   to="/settings"
                   className="block w-full rounded-lg px-3 py-2 text-left text-slate-100 hover:bg-sky-500/10"
                   onClick={() => setIsMenuOpen(false)}

@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { app } from "./app";
 import { connectDatabase } from "./config/database";
+import { tickReverseStrategies } from "./services/reverseStrategy.service";
 import { tickStepPlans } from "./services/stepPlan.service";
 
 dotenv.config();
@@ -8,6 +9,7 @@ dotenv.config();
 const STEP_PLAN_TICK_MS = 4000;
 setInterval(() => {
   tickStepPlans().catch((e) => console.error("[step plans]", e));
+  tickReverseStrategies().catch((e) => console.error("[reverse strategy]", e));
 }, STEP_PLAN_TICK_MS);
 
 const port = Number(process.env.PORT ?? 5000);

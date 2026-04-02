@@ -10,6 +10,7 @@ import {
   validateSingleStepPayload,
   validateStepsPayload
 } from "../services/stepPlan.service";
+import { hasActiveReverseForSymbol } from "../services/reverseStrategy.service";
 
 const wrap = <T>(data: T): { success: true; code: number; data: T } => ({
   success: true,
@@ -25,6 +26,10 @@ export const postCreateStepPlan = async (req: Request, res: Response): Promise<v
   }
 
   try {
+    if (hasActiveReverseForSymbol(v.symbol)) {
+      res.status(400).json({ message: "A reverse strategy is running for this symbol. Stop it before creating a step plan." });
+      return;
+    }
     const plan = createStepPlan({
       symbol: v.symbol,
       openType: v.openType,
