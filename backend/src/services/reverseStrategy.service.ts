@@ -70,8 +70,8 @@ export const toReverseRunDto = (r: ReverseStrategyRun): ReverseStrategyRunDto =>
 const runs = new Map<string, ReverseStrategyRun>();
 const tickLocks = new Set<string>();
 
-type LotFilter = { stepSize: number; minQty: number; maxQty: number };
-const lotCache = new Map<string, { filter: LotFilter; at: number }>();
+type SymbolFilters = { stepSize: number; minQty: number; maxQty: number; minNotional: number };
+const lotCache = new Map<string, { filter: SymbolFilters; at: number }>();
 const LOT_CACHE_MS = 300_000;
 
 const setMarginAndLeverage = async (symbol: string, openType: number, leverage?: number): Promise<void> => {
@@ -94,7 +94,7 @@ const fetchMarkPrice = async (symbol: string): Promise<number> => {
   return m;
 };
 
-const getLotFilter = async (symbol: string): Promise<LotFilter> => {
+const getLotFilter = async (symbol: string): Promise<SymbolFilters> => {
   const sym = toBinanceSymbol(symbol);
   const now = Date.now();
   const hit = lotCache.get(sym);
@@ -103,26 +103,40 @@ const getLotFilter = async (symbol: string): Promise<LotFilter> => {
   const info = await fapiPublicGet<{
     symbols: Array<{
       symbol: string;
-      filters: Array<{ filterType: string; stepSize?: string; minQty?: string; maxQty?: string }>;
+      filters: Array<Record<string, unknown>>;
     }>;
   }>("/fapi/v1/exchangeInfo", { symbol: sym });
 
   const s = info.symbols?.[0];
-  const lot = s?.filters?.find((f) => f.filterType === "LOT_SIZE");
+  const lot = s?.filters?.find((f) => String(f.filterType).toUpperCase() === "LOT_SIZE") as
+    | { stepSize?: string; minQty?: string; maxQty?: string }
+    | undefined;
   if (!lot?.stepSize || !lot.minQty) throw new Error(`LOT_SIZE filter missing for ${sym}.`);
 
-  const filter: LotFilter = {
+  const minNotionalFilter = s?.filters?.find((f) => String(f.filterType).toUpperCase() === "MIN_NOTIONAL") as
+    | { notional?: string; minNotional?: string }
+    | undefined;
+  const minNotionalRaw = minNotionalFilter?.notional ?? minNotionalFilter?.minNotional ?? "0";
+
+  const filter: SymbolFilters = {
     stepSize: Number(lot.stepSize),
     minQty: Number(lot.minQty),
-    maxQty: lot.maxQty ? Number(lot.maxQty) : Number.POSITIVE_INFINITY
+    maxQty: lot.maxQty ? Number(lot.maxQty) : Number.POSITIVE_INFINITY,
+    minNotional: Math.max(0, Number(minNotionalRaw) || 0)
   };
   lotCache.set(sym, { filter, at: now });
   return filter;
 };
 
-const floorQtyToLot = (rawQty: number, lot: LotFilter): number => {
+const floorQtyToLot = (rawQty: number, lot: SymbolFilters): number => {
   if (!Number.isFinite(rawQty) || rawQty <= 0) return 0;
   const steps = Math.floor(rawQty / lot.stepSize + 1e-12);
+  return steps * lot.stepSize;
+};
+
+const ceilQtyToLot = (rawQty: number, lot: SymbolFilters): number => {
+  if (!Number.isFinite(rawQty) || rawQty <= 0) return 0;
+  const steps = Math.ceil(rawQty / lot.stepSize - 1e-12);
   return steps * lot.stepSize;
 };
 
@@ -130,12 +144,15 @@ const qtyFromMarginUsdt = async (symbol: string, markPrice: number, marginUsdt: 
   const notional = marginUsdt * leverage;
   const raw = notional / markPrice;
   const lot = await getLotFilter(symbol);
-  const q = floorQtyToLot(raw, lot);
-  if (q < lot.minQty) {
-    throw new Error(
-      `Computed short add size ${q} is below minQty ${lot.minQty} for ${symbol}. Increase margin or use a symbol with smaller minimum.`
-    );
+  if (!Number.isFinite(raw) || raw <= 0) {
+    throw new Error(`Computed quantity is invalid for ${symbol}. Check leverage and starting margin.`);
   }
+
+  // Binance can enforce BOTH minQty and minNotional; rounding down can drop notional below the threshold.
+  const minQtyByNotional = lot.minNotional > 0 ? lot.minNotional / markPrice : 0;
+  const requiredQty = Math.max(raw, lot.minQty, minQtyByNotional);
+  let q = ceilQtyToLot(requiredQty, lot);
+
   if (q > lot.maxQty) throw new Error(`Quantity ${q} exceeds maxQty for ${symbol}.`);
   const decimals = (lot.stepSize.toString().split(".")[1] || "").length;
   return q.toFixed(decimals);
@@ -324,7 +341,11 @@ export const tickReverseStrategies = async (): Promise<void> => {
           const m = milestones[i];
           const triggerPx = run.refPrice * (m.triggerPct / 100);
           if (mark >= triggerPx) {
-            const scaledMargin = m.marginUsdt * run.startMarginUsdt;
+            const startMargin =
+              Number.isFinite(Number(run.startMarginUsdt)) && Number(run.startMarginUsdt) > 0
+                ? Number(run.startMarginUsdt)
+                : DEFAULT_START_MARGIN_USDT;
+            const scaledMargin = m.marginUsdt * startMargin;
             const qtyStr = await qtyFromMarginUsdt(run.symbol, mark, scaledMargin, run.leverage);
             await setMarginAndLeverage(run.symbol, run.openType, run.leverage);
             await placeMarket({ symbol: run.symbol, side: "SELL", quantity: qtyStr });
